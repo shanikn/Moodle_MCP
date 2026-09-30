@@ -13,7 +13,7 @@ Uses uv, Python 3.13+.
 ```
 uv sync                                  # install deps (incl. dev: pytest, respx)
 uv run moodle-mcp                        # run the MCP server (stdio)
-uv run pytest                            # tests (none exist yet)
+uv run pytest                            # tests (mocked Moodle, no network; ~1 s)
 uv run pytest path/to/test.py::test_name # single test
 ```
 
@@ -30,3 +30,9 @@ Layered: `server.py` (MCP tool definitions) → feature modules `assignments.py`
 - **Dates**: Moodle timestamps are Unix seconds, `0` = unset; `_date()` formats them as local `"YYYY-MM-DD HH:MM"` or `None`.
 - **Per-item API calls** run in a `ThreadPoolExecutor` (8 workers for submission status, 4 in `messages.py`: the university server returned 502s under heavier parallel load). `call()` retries once on HTTP 5xx.
 - **Local state**: Moodle has no "created" timestamp, so `new_assignments` keeps first-seen times in `.state/seen_assignments_<year>.json` (git-ignored, repo root). The first run only records a baseline.
+
+## Tests
+
+`tests/conftest.py` sets fake env vars and disables `load_dotenv` before importing `moodle_mcp`, so tests never see the real tokens. The `moodle` fixture is a fake web-service endpoint (respx): register answers with `moodle.on(wsfunction, json_or_callable)` and inspect requests with `moodle.calls_to(wsfunction)`; any unmocked request fails the test. If `uv run` fails with "file is being used by another process", the MCP server is running in Claude Code; use `uv run --no-sync pytest`.
+
+`client.py` uses one shared `httpx.Client` — creating a client per request (e.g. `httpx.post`) costs ~0.3 s each on Windows for SSL setup.

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 load_dotenv()
 
-MOODLE_BASE_URL = os.environ["MOODLE_BASE_URL"]
+MOODLE_BASE_URL = os.environ["MOODLE_BASE_URL"].rstrip("/")
 TOKENS = {}
 for key, value in os.environ.items():
     if key.startswith("MOODLE_TOKEN_"):

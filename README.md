@@ -4,7 +4,7 @@ An MCP server that gives Claude read access to a student's Moodle account
 (Reichman University, `moodle.runi.ac.il`), using the same web-service API as the Moodle mobile app.
 No admin rights needed.
 
-> **Status:** work in progress. Phases 1–3 (assignments, courses, grades, staff messages) work; Phase 4 and tests are next.
+> **Status:** work in progress. Phases 1–3 (assignments, courses, grades, staff messages) work and are covered by tests; Phase 4 (deadlines, reading, search) is next.
 
 ## Planned tools
 
@@ -78,6 +78,14 @@ Add a `MOODLE_TOKEN_<year>` line per year; no code changes needed.
 
 Treat the token like a password. To revoke it, log out of the Moodle app or remove it under
 *Preferences → Security keys*.
+
+## Tests
+
+```
+uv run pytest
+```
+
+Runs against a fake Moodle (no network, no real tokens).
 
 ## Connect to Claude Code
 

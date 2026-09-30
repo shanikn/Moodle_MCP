@@ -132,7 +132,7 @@ def staff_messages(days: int = 7, course_id: int | None = None, year: int | None
     Long texts are cut at 2000 characters; the url opens the full post.
 
     course_id (from list_courses) limits it to one course and is faster.
-    Takes ~10 s for a week across all courses, longer for large windows (a year ~30 s).
+    Takes a couple of seconds for a week across all courses; large windows are slower (a year ~15 s).
     """
     return messages.staff_messages(days, course_id, year)
 
