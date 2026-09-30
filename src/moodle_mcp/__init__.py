@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from moodle-mcp!")
+from moodle_mcp.server import main

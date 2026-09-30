@@ -1,11 +1,62 @@
+from typing import Literal
 from mcp.server.mcpserver import MCPServer
+from mcp.types import ToolAnnotations
+from moodle_mcp import assignments
 
-mcp = MCPServer("notability")
+mcp = MCPServer(
+    "moodle",
+    instructions=("Access to a student's Reichman University Moodle. Each academic year is a separate site; "
+    "tools default to the current year unless 'year' is given. Dates are local Israel time."),
+)
 
-@mcp.tool()
-def hello(name: str) -> str:
-    """Greet a person by name. Returns a greeting string"""
-    return f'Hello, {name}.'
+READ_ONLY = ToolAnnotations(readOnlyHint=True)
+
+@mcp.tool(annotations=READ_ONLY)
+def list_assignments(status: Literal["all", "pending","submitted"] = "all",
+                     include_overdue: bool = False,
+                     year: int | None = None) -> list[dict]:
+    """List the student's assignments across all their courses, sorted by due date.
+
+    Each item has: id, name, course, due, cutoff (dates as "YYYY-MM-DD HH:MM" or null),
+    url (link to the assignment in Moodle) and timemodified. With a status filter,
+    each item also has status: "new" (nothing handed in), "draft" (uploaded but not
+    submitted) or "submitted".
+
+    status:
+      - "all": every assignment, no submission check (fast, one request).
+      - "pending": not yet submitted (new or draft). Slower: checks each assignment
+        separately, so prefer it over "all" only when submission status matters.
+      - "submitted": already handed in. Same cost as "pending".
+      Note: "pending" can include assignments graded offline (e.g. exams) that never
+      need a Moodle submission.
+
+    include_overdue: False (default) returns only assignments whose due date has not
+    passed yet, or that have no due date. Set True for past assignments too.
+    """
+    return assignments.list_assignments(status, include_overdue, year)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def new_assignments(year: int | None = None) -> dict:
+    """Assignments added or changed today, across all courses (including past-due ones).
+
+    Returns {"first_run": bool, "new": [...], "updated": [...]}, with items in the same
+    format as list_assignments.
+      - new: assignments that appeared today (not seen on any earlier check).
+      - updated: assignments seen before whose details (e.g. due date, description)
+        were changed today by the lecturer.
+
+    Moodle does not record when an assignment was created, so this tool remembers the
+    assignments it has seen. On the very first run (first_run = true) it only records
+    that baseline: "new" is empty and "updated" is based on today's changes only.
+    Tell the user that new-assignment detection starts from that point.
+    """
+    return assignments.new_assignments(year)
+
+
+def main() -> None:
+    mcp.run()
+
 
 if __name__ == "__main__":
-    mcp.run()
+    main()
