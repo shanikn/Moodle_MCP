@@ -220,6 +220,9 @@ def main() -> None:
 
     import uvicorn
 
+    from moodle_mcp.oauth import OAuth
+
+    oauth = OAuth(secret)  # auto-approving sign-in that claude.ai requires; see oauth.py
     path = f"/{secret}/mcp"
     inner = mcp.streamable_http_app(
         streamable_http_path=path,
@@ -229,9 +232,12 @@ def main() -> None:
     )
 
     async def app(scope, receive, send):
+        if scope["type"] == "http" and oauth.handles(scope["path"]):
+            await oauth(scope, receive, send)
+            return
         # This server never pushes messages, so answer the optional GET listening stream with
-        # 405 right away (allowed by the MCP spec). Otherwise the GET hangs until it times out,
-        # and claude.ai takes that as a failure and falls back to trying OAuth.
+        # 405 right away (allowed by the MCP spec) instead of holding the stream open until it
+        # times out.
         if scope["type"] == "http" and scope["method"] in ("GET", "HEAD") and scope["path"] == path:
             await send({"type": "http.response.start", "status": 405,
                         "headers": [(b"allow", b"POST, DELETE"), (b"content-length", b"0")]})
