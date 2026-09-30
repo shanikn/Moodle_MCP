@@ -1,7 +1,7 @@
 from typing import Literal
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
-from moodle_mcp import assignments
+from moodle_mcp import assignments, courses
 
 mcp = MCPServer(
     "moodle",
@@ -68,6 +68,19 @@ def new_assignments(year: int | None = None) -> dict:
     Tell the user that new-assignment detection starts from that point.
     """
     return assignments.new_assignments(year)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def list_courses(semester: int | None = None, year: int | None = None) -> list[dict]:
+    """List the student's courses for an academic year, sorted by semester then name.
+
+    Each item has: id (Moodle course id, used by other course tools), name,
+    course_number (the university's course number, e.g. 592), semester (1 or 2) and url.
+
+    semester: 1 or 2 to return only that semester; omit for the whole year.
+    Credit points, syllabus and class schedule are not stored in Moodle.
+    """
+    return courses.list_courses(semester, year)
 
 
 def main() -> None:

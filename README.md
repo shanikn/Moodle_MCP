@@ -20,7 +20,7 @@ No admin rights needed.
 
 | Tool | Description | Moodle API |
 |---|---|---|
-| `list_courses` | Your courses, with semester and course number | `core_enrol_get_users_courses`, `core_course_get_courses_by_field` |
+| ✅ `list_courses` | Your courses, with semester and course number | `core_enrol_get_users_courses`, `core_course_get_courses_by_field` |
 | `get_course_staff` | Lecturer (`editingteacher`) and TAs (`tutor`, `instruction_assistant`) | `core_enrol_get_enrolled_users` |
 | `get_course_contents` | Sections and activities in a course | `core_course_get_contents` |
 | `get_grades` | With a course: each grade item, grade and weight. Without: overall grade per course | `gradereport_user_get_grade_items` (needs `userid`), `gradereport_overview_get_course_grades` |
