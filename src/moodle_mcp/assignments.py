@@ -1,0 +1,1 @@
+#  the logic for listing all assignments and for the snapshot comparison (options A and B)
