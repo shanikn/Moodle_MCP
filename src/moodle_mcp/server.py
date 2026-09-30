@@ -218,14 +218,28 @@ def main() -> None:
     if len(secret) < 32:
         raise SystemExit("MCP_SECRET_PATH must be set to a random string of at least 32 characters")
 
-    mcp.run(
-        "streamable-http",
-        host="0.0.0.0",  # listen on all interfaces so the host can route traffic in
-        port=int(os.environ.get("PORT", "8000")),  # Render sets PORT
-        streamable_http_path=f"/{secret}/mcp",
+    import uvicorn
+
+    path = f"/{secret}/mcp"
+    inner = mcp.streamable_http_app(
+        streamable_http_path=path,
         stateless_http=True,  # no per-client session state, so restarts/sleeps don't break clients
         json_response=True,
+        host="0.0.0.0",  # not localhost, so the SDK's localhost-only Host check stays off
     )
+
+    async def app(scope, receive, send):
+        # This server never pushes messages, so answer the optional GET listening stream with
+        # 405 right away (allowed by the MCP spec). Otherwise the GET hangs until it times out,
+        # and claude.ai takes that as a failure and falls back to trying OAuth.
+        if scope["type"] == "http" and scope["method"] in ("GET", "HEAD") and scope["path"] == path:
+            await send({"type": "http.response.start", "status": 405,
+                        "headers": [(b"allow", b"POST, DELETE"), (b"content-length", b"0")]})
+            await send({"type": "http.response.body", "body": b""})
+            return
+        await inner(scope, receive, send)
+
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8000")))  # Render/Cloud Run set PORT
 
 
 if __name__ == "__main__":
