@@ -2,6 +2,7 @@
 import functools
 from typing import Any
 import logging
+import time
 
 import httpx
 from moodle_mcp.config import get_site
@@ -33,7 +34,12 @@ def call(wsfunction: str, year: int | None = None, **params) -> Any:  # parsed J
         "moodlewssettingfilter": "true",
         **_flatten(params),
     }
-    response = httpx.post(f"{site.url}/webservice/rest/server.php", data=data, timeout=30)
+    url = f"{site.url}/webservice/rest/server.php"
+    response = httpx.post(url, data=data, timeout=30)
+    if response.status_code >= 500:
+        # the university server sometimes answers 502 under load; one retry usually works
+        time.sleep(1)
+        response = httpx.post(url, data=data, timeout=30)
     response.raise_for_status()
     result = response.json()
     if isinstance(result, dict) and "exception" in result:

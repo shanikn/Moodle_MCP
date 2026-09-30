@@ -1,7 +1,7 @@
 from typing import Literal
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
-from moodle_mcp import assignments, courses, grades
+from moodle_mcp import assignments, courses, grades, messages
 
 mcp = MCPServer(
     "moodle",
@@ -87,7 +87,7 @@ def list_courses(semester: int | None = None, year: int | None = None) -> list[d
 def get_course_staff(course_id: int, year: int | None = None) -> list[dict]:
     """The lecturer(s) and TAs of a course. course_id comes from list_courses.
 
-    Returns [{"name", "role"}] with role "lecturer" or "TA", lecturers first.
+    Returns [{"id", "name", "role"}] with role "lecturer" or "TA", lecturers first.
     Email addresses are not visible to students.
     """
     return courses.get_course_staff(course_id, year)
@@ -118,6 +118,23 @@ def get_grades(course_id: int | None = None, year: int | None = None) -> dict:
     alternative exam dates) do not count toward the total.
     """
     return grades.get_grades(course_id, year)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def staff_messages(days: int = 7, course_id: int | None = None, year: int | None = None) -> list[dict]:
+    """What lecturers and TAs posted or sent in the last `days` days, newest first.
+
+    Each item has kind, author, role ("lecturer" / "TA"), time and text, plus:
+      - "announcement": a post on a course's announcement board (course, forum, subject, url)
+      - "forum_reply": a staff answer in a Q&A forum; in_reply_to holds the student's question
+      - "forum_post": a new staff discussion in a Q&A forum
+      - "direct_message": a private Moodle message to the student (only when course_id is omitted)
+    Long texts are cut at 2000 characters; the url opens the full post.
+
+    course_id (from list_courses) limits it to one course and is faster.
+    Takes ~10 s for a week across all courses, longer for large windows (a year ~30 s).
+    """
+    return messages.staff_messages(days, course_id, year)
 
 
 def main() -> None:

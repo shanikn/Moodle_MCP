@@ -4,7 +4,7 @@ An MCP server that gives Claude read access to a student's Moodle account
 (Reichman University, `moodle.runi.ac.il`), using the same web-service API as the Moodle mobile app.
 No admin rights needed.
 
-> **Status:** work in progress. Phases 1–2 (assignments, courses, grades) work; Phase 3 (messages) is next.
+> **Status:** work in progress. Phases 1–3 (assignments, courses, grades, staff messages) work; Phase 4 and tests are next.
 
 ## Planned tools
 
@@ -29,7 +29,7 @@ No admin rights needed.
 
 | Tool | Description | Moodle API |
 |---|---|---|
-| `staff_messages` | Forum posts by staff, direct messages and notifications since a given time | `mod_forum_*`, `core_message_get_conversations`, `message_popup_get_popup_notifications` |
+| ✅ `staff_messages` | Announcements and Q&A answers by lecturers/TAs, and direct messages, from the last N days | `mod_forum_*`, `core_enrol_get_enrolled_users`, `core_message_get_conversation_messages` |
 
 **Phase 4 – Reading & schedule**
 

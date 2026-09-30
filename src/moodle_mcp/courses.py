@@ -44,7 +44,7 @@ def get_course_staff(course_id: int, year: int | None = None) -> list[dict]:
         roles = {STAFF_ROLES[r["shortname"]] for r in u.get("roles", []) if r["shortname"] in STAFF_ROLES}
         if roles:
             # someone who is both lecturer and TA is listed as lecturer
-            staff.append({"name": u["fullname"], "role": "lecturer" if "lecturer" in roles else "TA"})
+            staff.append({"id": u["id"], "name": u["fullname"], "role": "lecturer" if "lecturer" in roles else "TA"})
     staff.sort(key=lambda s: (s["role"] != "lecturer", s["name"]))
     return staff
 
