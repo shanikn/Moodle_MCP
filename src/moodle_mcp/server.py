@@ -202,7 +202,30 @@ def read_content(url: str, offset: int = 0) -> dict:
 
 
 def main() -> None:
-    mcp.run()
+    """Run over stdio (default, for the Claude desktop app / Claude Code), or over HTTP
+    when MCP_TRANSPORT=http (for hosting, e.g. on Render).
+
+    In HTTP mode the endpoint is /<MCP_SECRET_PATH>/mcp. claude.ai custom connectors can't
+    send a static auth header, so the unguessable path is what keeps the server private:
+    any other path returns 404. Keep MCP_SECRET_PATH out of git (set it on the host)."""
+    import os
+
+    if os.environ.get("MCP_TRANSPORT", "stdio").lower() != "http":
+        mcp.run()
+        return
+
+    secret = os.environ.get("MCP_SECRET_PATH", "").strip("/")
+    if len(secret) < 32:
+        raise SystemExit("MCP_SECRET_PATH must be set to a random string of at least 32 characters")
+
+    mcp.run(
+        "streamable-http",
+        host="0.0.0.0",  # listen on all interfaces so the host can route traffic in
+        port=int(os.environ.get("PORT", "8000")),  # Render sets PORT
+        streamable_http_path=f"/{secret}/mcp",
+        stateless_http=True,  # no per-client session state, so restarts/sleeps don't break clients
+        json_response=True,
+    )
 
 
 if __name__ == "__main__":
