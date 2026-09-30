@@ -6,7 +6,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from moodle_mcp import assignments, courses, deadlines, grades, messages, reading, search
+from moodle_mcp import assignments, calendar, courses, deadlines, grades, messages, reading, search
 from moodle_mcp.client import MoodleError
 
 mcp = MCPServer(
@@ -35,12 +35,12 @@ def tool(fn):
 @tool
 def list_assignments(status: Literal["all", "pending","submitted"] = "all",
                      include_overdue: bool = False,
-                     year: int | None = None) -> list[dict]:
+                     year: int | None = None) -> dict:
     """List the student's assignments across all their courses, sorted by due date.
 
-    Each item has: id, name, course, due, cutoff (dates as "YYYY-MM-DD HH:MM" or null),
-    url (link to the assignment in Moodle) and timemodified. With a status filter,
-    each item also has status: "new" (nothing handed in), "draft" (uploaded but not
+    Returns {"assignments": [...]}. Each item has: id, name, course, due, cutoff
+    (dates as "YYYY-MM-DD HH:MM" or null), url (link to the assignment in Moodle) and
+    timemodified. With a status filter, each item also has status: "new" (nothing handed in), "draft" (uploaded but not
     submitted) or "submitted".
 
     status:
@@ -54,7 +54,7 @@ def list_assignments(status: Literal["all", "pending","submitted"] = "all",
     include_overdue: False (default) returns only assignments whose due date has not
     passed yet, or that have no due date. Set True for past assignments too.
     """
-    return assignments.list_assignments(status, include_overdue, year)
+    return {"assignments": assignments.list_assignments(status, include_overdue, year)}
 
 
 @tool
@@ -92,39 +92,39 @@ def new_assignments(year: int | None = None) -> dict:
 
 
 @tool
-def list_courses(semester: int | None = None, year: int | None = None) -> list[dict]:
+def list_courses(semester: int | None = None, year: int | None = None) -> dict:
     """List the student's courses for an academic year, sorted by semester then name.
 
-    Each item has: id (Moodle course id, used by other course tools), name,
-    course_number (the university's course number, e.g. 592), semester (1 or 2) and url.
+    Returns {"courses": [...]}. Each item has: id (Moodle course id, used by other
+    course tools), name, course_number (the university's course number, e.g. 592), semester (1 or 2) and url.
 
     semester: 1 or 2 to return only that semester; omit for the whole year.
     Credit points, syllabus and class schedule are not stored in Moodle.
     """
-    return courses.list_courses(semester, year)
+    return {"courses": courses.list_courses(semester, year)}
 
 
 @tool
-def get_course_staff(course_id: int, year: int | None = None) -> list[dict]:
+def get_course_staff(course_id: int, year: int | None = None) -> dict:
     """The lecturer(s) and TAs of a course. course_id comes from list_courses.
 
-    Returns [{"id", "name", "role"}] with role "lecturer" or "TA", lecturers first.
+    Returns {"staff": [{"id", "name", "role"}]} with role "lecturer" or "TA", lecturers first.
     Email addresses are not visible to students.
     """
-    return courses.get_course_staff(course_id, year)
+    return {"staff": courses.get_course_staff(course_id, year)}
 
 
 @tool
-def get_course_contents(course_id: int, year: int | None = None) -> list[dict]:
+def get_course_contents(course_id: int, year: int | None = None) -> dict:
     """Everything posted on a course page, section by section (e.g. "Week 1", "Homeworks").
 
-    Returns [{"section", "summary"?, "items": [...]}]. Each item has id, type, name and
-    url, plus: files [{filename, url}] for uploaded files (slides, recitations,
+    Returns {"sections": [{"section", "summary"?, "items": [...]}]}. Each item has id,
+    type, name and url, plus: files [{filename, url}] for uploaded files (slides, recitations,
     solutions), link for external links (e.g. Panopto recordings) and description
     when the lecturer wrote one. Common types: resource (file), assign, forum, url,
     page, folder, quiz, lti (Zoom/Panopto). course_id comes from list_courses.
     """
-    return courses.get_course_contents(course_id, year)
+    return {"sections": courses.get_course_contents(course_id, year)}
 
 
 @tool
@@ -142,10 +142,11 @@ def get_grades(course_id: int | None = None, year: int | None = None) -> dict:
 
 
 @tool
-def staff_messages(days: int = 7, course_id: int | None = None, year: int | None = None) -> list[dict]:
+def staff_messages(days: int = 7, course_id: int | None = None, year: int | None = None) -> dict:
     """What lecturers and TAs posted or sent in the last `days` days, newest first.
 
-    Each item has kind, author, role ("lecturer" / "TA"), time and text, plus:
+    Returns {"messages": [...]}. Each item has kind, author, role ("lecturer" / "TA"),
+    time and text, plus:
       - "announcement": a post on a course's announcement board (course, forum, subject, url)
       - "forum_reply": a staff answer in a Q&A forum; in_reply_to holds the student's question
       - "forum_post": a new staff discussion in a Q&A forum
@@ -155,20 +156,46 @@ def staff_messages(days: int = 7, course_id: int | None = None, year: int | None
     course_id (from list_courses) limits it to one course and is faster.
     Takes a couple of seconds for a week across all courses; large windows are slower (a year ~15 s).
     """
-    return messages.staff_messages(days, course_id, year)
+    return {"messages": messages.staff_messages(days, course_id, year)}
 
 
 @tool
-def upcoming_deadlines(days: int = 14, include_overdue: bool = False, year: int | None = None) -> list[dict]:
+def upcoming_deadlines(days: int = 14, include_overdue: bool = False, year: int | None = None) -> dict:
     """Things due in the next `days` days that still need action (Moodle's timeline),
     across all courses: assignments not yet submitted, quizzes not yet attempted, etc.
 
-    Each item has name, type (assign, quiz, ...), course, due, overdue, action (what to do,
-    e.g. "Add submission") and url. Fast: one request. Prefer this over
-    list_assignments(status="pending") for "what's due soon?" questions.
+    Returns {"deadlines": [...]}. Each item has name, type (assign, quiz, ...), course,
+    due, overdue, action (what to do, e.g. "Add submission") and url. Fast: one request.
+    Use this for "what do I need to submit?" / "what's due soon?"; prefer it over
+    list_assignments(status="pending"). Exams, moed B dates and other non-actionable
+    events are not here: use calendar_events for those.
     include_overdue also returns items past due in the last 30 days.
     """
-    return deadlines.upcoming_deadlines(days, include_overdue, year)
+    return {"deadlines": deadlines.upcoming_deadlines(days, include_overdue, year)}
+
+
+@tool
+def calendar_events(days: int = 30, course_id: int | None = None, year: int | None = None) -> dict:
+    """Everything on the student's Moodle calendar in the next `days` days, soonest first:
+    exams, moed A/B dates, lectures or makeup classes the lecturer added, course and
+    site-wide events, personal events, and activity dates (assignment due, quiz
+    open/close), whether or not they need action.
+
+    Use this for "when is my exam?", "when is moed B?", "what's happening this week?".
+    For "what do I still need to submit?" use upcoming_deadlines instead: it knows what
+    is already done, this tool does not.
+
+    Returns {"events": [...]}. Each item has name, course (null for site and personal
+    events), type ("course", "site", "user", "group", "category", or for activity dates
+    "due", "open", "close", "gradingdue", ...), start and end ("YYYY-MM-DD HH:MM"; end
+    null when the event has no duration) and url (the calendar day in Moodle), plus
+    activity (assign, quiz, ...) for activity dates, location and description (plain
+    text, cut at 500 characters) when set.
+    Exams are usually course events named e.g. "מבחן" / "Exam" / "מועד ב", or quiz dates.
+
+    course_id (from list_courses) returns only that course's events. Two requests.
+    """
+    return {"events": calendar.calendar_events(days, course_id, year)}
 
 
 @tool

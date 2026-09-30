@@ -157,7 +157,7 @@ Third-party plugins ([mod_checklist](https://github.com/davosmith/moodle-checkli
 | `core_calendar_get_calendar_access_information` | Convenience function to retrieve some permissions/access information for the given course calendar. |
 | `core_calendar_get_calendar_day_view` | Fetch the day view data for a calendar |
 | `core_calendar_get_calendar_event_by_id` | Get calendar event by id |
-| `core_calendar_get_calendar_events` | Get calendar events |
+| `core_calendar_get_calendar_events` **(planned)** | Get calendar events |
 | `core_calendar_get_calendar_export_token` | Return the auth token required for exporting a calendar. |
 | `core_calendar_get_calendar_monthly_view` | Fetch the monthly view data for a calendar |
 | `core_calendar_get_calendar_upcoming_view` | Fetch the upcoming view data for a calendar |
