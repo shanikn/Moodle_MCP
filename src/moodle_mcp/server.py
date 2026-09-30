@@ -9,7 +9,7 @@ mcp = MCPServer(
     "tools default to the current year unless 'year' is given. Dates are local Israel time."),
 )
 
-READ_ONLY = ToolAnnotations(readOnlyHint=True)
+READ_ONLY = ToolAnnotations(read_only_hint=True)
 
 @mcp.tool(annotations=READ_ONLY)
 def list_assignments(status: Literal["all", "pending","submitted"] = "all",
@@ -34,6 +34,22 @@ def list_assignments(status: Literal["all", "pending","submitted"] = "all",
     passed yet, or that have no due date. Set True for past assignments too.
     """
     return assignments.list_assignments(status, include_overdue, year)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def get_assignment(assignment_id: int, year: int | None = None) -> dict:
+    """Full details of one assignment. Use the id from list_assignments.
+
+    Returns the task: name, course, due, cutoff, url, description (plain text) and
+    attachments (e.g. the exercise PDF); the student's submission: status
+    ("new" / "draft" / "submitted"), last_modified, submitted files, grading_status;
+    and the result: grade (e.g. "48.00 / 100.00", null if not graded), feedback_comments
+    and feedback_files (e.g. an annotated PDF).
+
+    File urls open in a browser where the student is logged in to Moodle; this tool
+    does not download file contents.
+    """
+    return assignments.get_assignment(assignment_id, year)
 
 
 @mcp.tool(annotations=READ_ONLY)

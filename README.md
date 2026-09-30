@@ -4,7 +4,7 @@ An MCP server that gives Claude read access to a student's Moodle account
 (Reichman University, `moodle.runi.ac.il`), using the same web-service API as the Moodle mobile app.
 No admin rights needed.
 
-> **Status:** work in progress. Config is done; the API client and tools are being built.
+> **Status:** work in progress. Phase 1 (assignment tools) works; Phase 2 (courses) is next.
 
 ## Planned tools
 
@@ -12,9 +12,9 @@ No admin rights needed.
 
 | Tool | Description | Moodle API |
 |---|---|---|
-| `list_assignments` | Assignments across your courses, with due dates. `status`: `all` (default) / `pending` (not submitted, incl. drafts) / `submitted`; `include_overdue` (default off) | `mod_assign_get_assignments` + `mod_assign_get_submission_status` per assignment |
-| `new_assignments` | Assignments added (not in last snapshot) or updated today (`timemodified`) | `mod_assign_get_assignments` + local snapshot |
-| `get_assignment` | One assignment's details, submission status and feedback | `mod_assign_get_submission_status` |
+| ✅ `list_assignments` | Assignments across your courses, with due dates. `status`: `all` (default) / `pending` (not submitted, incl. drafts) / `submitted`; `include_overdue` (default off) | `mod_assign_get_assignments` + `mod_assign_get_submission_status` per assignment |
+| ✅ `new_assignments` | Assignments added (not in last snapshot) or updated today (`timemodified`) | `mod_assign_get_assignments` + local snapshot |
+| ✅ `get_assignment` | One assignment's details, submission status and feedback | `mod_assign_get_submission_status` |
 
 **Phase 2 – Courses**
 

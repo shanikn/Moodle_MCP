@@ -1,7 +1,13 @@
 #  sends a request to Moodle and returns the JSON
 import functools
+from typing import Any
+import logging
+
 import httpx
 from moodle_mcp.config import get_site
+
+# httpx logs every request at INFO; keep the MCP server output quiet
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 class MoodleError(Exception):
     """Moodle returned an error (it does this with HTTP 200)."""
@@ -17,12 +23,14 @@ def _flatten(params: dict) -> dict:
             flat[key] = value
     return flat
 
-def call(wsfunction: str, year: int | None = None, **params) -> dict | list:
+def call(wsfunction: str, year: int | None = None, **params) -> Any:  # parsed JSON
     site = get_site(year)
     data = {
         "wstoken": site.token,
         "wsfunction": wsfunction,
         "moodlewsrestformat": "json",
+        # apply Moodle text filters, e.g. multilang: "רשתותComputer Networks" -> "Computer Networks"
+        "moodlewssettingfilter": "true",
         **_flatten(params),
     }
     response = httpx.post(f"{site.url}/webservice/rest/server.php", data=data, timeout=30)
