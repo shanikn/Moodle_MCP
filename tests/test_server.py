@@ -3,7 +3,8 @@ import asyncio
 from moodle_mcp.server import mcp
 
 TOOLS = {"list_assignments", "get_assignment", "new_assignments", "list_courses",
-         "get_course_staff", "get_course_contents", "get_grades", "staff_messages"}
+         "get_course_staff", "get_course_contents", "get_grades", "staff_messages",
+         "upcoming_deadlines", "search_moodle", "read_content"}
 
 
 def test_all_tools_registered_and_read_only():

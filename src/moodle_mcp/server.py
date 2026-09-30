@@ -1,7 +1,7 @@
 from typing import Literal
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
-from moodle_mcp import assignments, courses, grades, messages
+from moodle_mcp import assignments, courses, deadlines, grades, messages, reading, search
 
 mcp = MCPServer(
     "moodle",
@@ -135,6 +135,47 @@ def staff_messages(days: int = 7, course_id: int | None = None, year: int | None
     Takes a couple of seconds for a week across all courses; large windows are slower (a year ~15 s).
     """
     return messages.staff_messages(days, course_id, year)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def upcoming_deadlines(days: int = 14, include_overdue: bool = False, year: int | None = None) -> list[dict]:
+    """Things due in the next `days` days that still need action (Moodle's timeline),
+    across all courses: assignments not yet submitted, quizzes not yet attempted, etc.
+
+    Each item has name, type (assign, quiz, ...), course, due, overdue, action (what to do,
+    e.g. "Add submission") and url. Fast: one request. Prefer this over
+    list_assignments(status="pending") for "what's due soon?" questions.
+    include_overdue also returns items past due in the last 30 days.
+    """
+    return deadlines.upcoming_deadlines(days, include_overdue, year)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def search_moodle(query: str, page: int = 0, year: int | None = None) -> dict:
+    """Moodle's site-wide search across the student's courses: forum posts, course
+    sections, activities and files (by name).
+
+    Returns {"total", "page", "results": [{title, kind, course, snippet, modified, url}]}.
+    kind is "<component>/<area>", e.g. "mod_forum/post". Use page for more results.
+    Search matches words, so try the language the course uses (Hebrew or English).
+    """
+    return search.search(query, page, year)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def read_content(url: str, offset: int = 0) -> dict:
+    """Read the text of a course file or Page activity, e.g. lecture slides as PDF,
+    exercise sheets, solutions, or a "Page" with links.
+
+    url: a file url (".../pluginfile.php/...") from get_course_contents or get_assignment,
+    or a Page url (".../mod/page/view.php?id=..."). Only links to the student's own
+    Moodle site are accepted.
+    Returns {"name", "text", "total_chars", "next_offset"?}. PDF text is split with
+    "--- page N ---" markers. Long texts come in parts of 30,000 characters: call again
+    with offset=next_offset for the rest.
+    Reads PDF, text and HTML; not .pptx/.docx or images (look for a PDF version).
+    """
+    return reading.read_content(url, offset)
 
 
 def main() -> None:

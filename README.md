@@ -4,9 +4,9 @@ An MCP server that gives Claude read access to a student's Moodle account
 (Reichman University, `moodle.runi.ac.il`), using the same web-service API as the Moodle mobile app.
 No admin rights needed.
 
-> **Status:** work in progress. Phases 1–3 (assignments, courses, grades, staff messages) work and are covered by tests; Phase 4 (deadlines, reading, search) is next.
+> **Status:** all planned read-only tools (phases 1–4) work and are covered by tests.
 
-## Planned tools
+## Tools
 
 **Phase 1 – Assignments**
 
@@ -35,9 +35,9 @@ No admin rights needed.
 
 | Tool | Description | Moodle API |
 |---|---|---|
-| `upcoming_deadlines` | Assignments and quizzes due soon | `core_calendar_get_action_events_by_timesort` |
-| `read_page` | Text of a Page activity or course file (PDF, etc.) | `mod_page_get_pages_by_courses` + file download |
-| `search` | Moodle global search across your courses | `core_search_get_results` |
+| ✅ `upcoming_deadlines` | Assignments and quizzes due soon that still need action | `core_calendar_get_action_events_by_timesort` |
+| ✅ `read_content` | Text of a course file (PDF, text, HTML) or Page activity, in 30k-character parts | `mod_page_get_pages_by_courses` + file download |
+| ✅ `search_moodle` | Moodle global search across your courses | `core_search_get_results` |
 
 **Later / optional:** write actions (e.g. submitting an assignment).
 
