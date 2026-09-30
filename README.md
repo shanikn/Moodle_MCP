@@ -8,10 +8,41 @@ No admin rights needed.
 
 ## Planned tools
 
-| Tool | Description |
-|---|---|
-| `list_assignments` | All assignments across your courses, with due dates |
-| `new_assignments` | Assignments added (or updated) since the last check / today |
+**Phase 1 – Assignments**
+
+| Tool | Description | Moodle API |
+|---|---|---|
+| `list_assignments` | Assignments across your courses, with due dates. `status`: `all` (default) / `pending` (not submitted, incl. drafts) / `submitted`; `include_overdue` (default off) | `mod_assign_get_assignments` + `mod_assign_get_submission_status` per assignment |
+| `new_assignments` | Assignments added (not in last snapshot) or updated today (`timemodified`) | `mod_assign_get_assignments` + local snapshot |
+| `get_assignment` | One assignment's details, submission status and feedback | `mod_assign_get_submission_status` |
+
+**Phase 2 – Courses**
+
+| Tool | Description | Moodle API |
+|---|---|---|
+| `list_courses` | Your courses, with semester and course number | `core_enrol_get_users_courses`, `core_course_get_courses_by_field` |
+| `get_course_staff` | Lecturer (`editingteacher`) and TAs (`tutor`, `instruction_assistant`) | `core_enrol_get_enrolled_users` |
+| `get_course_contents` | Sections and activities in a course | `core_course_get_contents` |
+| `get_grades` | With a course: each grade item, grade and weight. Without: overall grade per course | `gradereport_user_get_grade_items` (needs `userid`), `gradereport_overview_get_course_grades` |
+
+**Phase 3 – Communication**
+
+| Tool | Description | Moodle API |
+|---|---|---|
+| `staff_messages` | Forum posts by staff, direct messages and notifications since a given time | `mod_forum_*`, `core_message_get_conversations`, `message_popup_get_popup_notifications` |
+
+**Phase 4 – Reading & schedule**
+
+| Tool | Description | Moodle API |
+|---|---|---|
+| `upcoming_deadlines` | Assignments and quizzes due soon | `core_calendar_get_action_events_by_timesort` |
+| `read_page` | Text of a Page activity or course file (PDF, etc.) | `mod_page_get_pages_by_courses` + file download |
+| `search` | Moodle global search across your courses | `core_search_get_results` |
+
+**Later / optional:** write actions (e.g. submitting an assignment).
+
+**Not available in Moodle:** syllabus, credit points and class schedule. These live in the
+university's own systems and would need a separate data source.
 
 Every tool takes an optional `year` (defaults to `MOODLE_DEFAULT_YEAR`).
 All API functions available to a student token: [docs/moodle_functions.md](docs/moodle_functions.md).
