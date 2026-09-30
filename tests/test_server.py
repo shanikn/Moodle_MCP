@@ -1,10 +1,18 @@
 import asyncio
 
+import httpx
+import pytest
+from mcp.server.mcpserver.exceptions import ToolError
+
 from moodle_mcp.server import mcp
 
 TOOLS = {"list_assignments", "get_assignment", "new_assignments", "list_courses",
          "get_course_staff", "get_course_contents", "get_grades", "staff_messages",
          "upcoming_deadlines", "search_moodle", "read_content"}
+
+
+def call_tool(name, args):
+    return asyncio.run(mcp.call_tool(name, args))
 
 
 def test_all_tools_registered_and_read_only():
@@ -18,3 +26,28 @@ def test_all_tools_registered_and_read_only():
 def test_status_is_limited_to_valid_values():
     tool = next(t for t in asyncio.run(mcp.list_tools()) if t.name == "list_assignments")
     assert tool.input_schema["properties"]["status"]["enum"] == ["all", "pending", "submitted"]
+
+
+# mcp hides the message of unexpected exceptions; these errors must reach Claude as text
+
+
+def test_moodle_error_message_reaches_claude(moodle):
+    moodle.on("mod_assign_get_assignments", {"exception": "x", "errorcode": "invalidtoken", "message": "Invalid token"})
+    with pytest.raises(ToolError, match="invalidtoken: Invalid token"):
+        call_tool("list_assignments", {})
+
+
+def test_bad_input_message_reaches_claude(moodle):
+    with pytest.raises(ToolError, match="Only links to your Moodle site"):
+        call_tool("read_content", {"url": "https://example.com/pluginfile.php/1/x.pdf"})
+
+
+def test_missing_year_message_reaches_claude(moodle):
+    with pytest.raises(ToolError, match="Add MOODLE_TOKEN_2030 to .env"):
+        call_tool("list_courses", {"year": 2030})
+
+
+def test_network_error_message_reaches_claude(moodle):
+    moodle.router.routes[0].side_effect = httpx.ConnectError("connection refused")
+    with pytest.raises(ToolError, match="Could not reach Moodle: connection refused"):
+        call_tool("list_courses", {})

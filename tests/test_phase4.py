@@ -3,11 +3,13 @@ import time
 
 import httpx
 import pytest
+from docx import Document
+from pptx import Presentation
 from pypdf import PdfWriter
 
 from moodle_mcp.client import MoodleError
 from moodle_mcp.deadlines import upcoming_deadlines
-from moodle_mcp.reading import read_content
+from moodle_mcp.reading import DOCX, PPTX, read_content
 from moodle_mcp.search import search
 
 NOW = int(time.time())
@@ -80,10 +82,48 @@ def test_read_long_text_in_parts(moodle):
     assert second["text"] == "b" * 10 and "next_offset" not in second
 
 
+def test_read_pptx_slides_and_notes(moodle):
+    deck = Presentation()
+    slide = deck.slides.add_slide(deck.slide_layouts[1])
+    slide.shapes.title.text = "TCP"
+    slide.placeholders[1].text = "Three-way handshake"
+    slide.notes_slide.notes_text_frame.text = "Draw SYN/ACK on the board"
+    buffer = io.BytesIO()
+    deck.save(buffer)
+    file_route(moodle, httpx.Response(200, content=buffer.getvalue(), headers={"content-type": PPTX}))
+    text = read_content(f"{SITE}/pluginfile.php/1/lecture.pptx")["text"]
+    assert text == "--- slide 1 ---\nTCP\nThree-way handshake\n[notes] Draw SYN/ACK on the board"
+
+
+def test_read_docx_paragraphs_and_tables(moodle):
+    doc = Document()
+    doc.add_paragraph("ERD exercise")
+    table = doc.add_table(rows=1, cols=2)
+    table.rows[0].cells[0].text, table.rows[0].cells[1].text = "Student", "Course"
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    file_route(moodle, httpx.Response(200, content=buffer.getvalue(), headers={"content-type": DOCX}))
+    assert read_content(f"{SITE}/pluginfile.php/1/ex.docx")["text"] == "ERD exercise\nStudent | Course"
+
+
+def test_read_notebook_served_as_json(moodle):
+    notebook = {"cells": [{"cell_type": "markdown", "source": ["# HW 1\n", "Solution"]},
+                          {"cell_type": "code", "source": "print(1)"}]}
+    file_route(moodle, httpx.Response(200, json=notebook))
+    text = read_content(f"{SITE}/pluginfile.php/1/hw1.ipynb")["text"]
+    assert text == "--- cell 1 (markdown) ---\n# HW 1\nSolution\n\n--- cell 2 (code) ---\nprint(1)"
+
+
+def test_read_text_strips_bom_and_decodes_name(moodle):
+    file_route(moodle, httpx.Response(200, content="﻿SELECT 1;".encode(), headers={"content-type": "text/plain; charset=utf-8"}))
+    result = read_content(f"{SITE}/pluginfile.php/1/%D7%A9%D7%90%D7%9C%D7%94.sql")
+    assert result["text"] == "SELECT 1;" and result["name"] == "שאלה.sql"
+
+
 def test_read_unsupported_type(moodle):
-    file_route(moodle, httpx.Response(200, content=b"PK", headers={"content-type": "application/vnd.ms-powerpoint"}))
-    with pytest.raises(ValueError, match="only PDF, text and HTML"):
-        read_content(f"{SITE}/pluginfile.php/1/slides.pptx")
+    file_route(moodle, httpx.Response(200, content=b"\xd0\xcf", headers={"content-type": "application/msword"}))
+    with pytest.raises(ValueError, match="supported: PDF, PowerPoint"):
+        read_content(f"{SITE}/pluginfile.php/1/old.doc")
 
 
 def test_read_moodle_file_error(moodle):

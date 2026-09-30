@@ -1,7 +1,13 @@
+from functools import wraps
 from typing import Literal
+
+import httpx
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
+
 from moodle_mcp import assignments, courses, deadlines, grades, messages, reading, search
+from moodle_mcp.client import MoodleError
 
 mcp = MCPServer(
     "moodle",
@@ -11,7 +17,22 @@ mcp = MCPServer(
 
 READ_ONLY = ToolAnnotations(read_only_hint=True)
 
-@mcp.tool(annotations=READ_ONLY)
+
+def tool(fn):
+    """Register a read-only tool. Expected failures (Moodle errors such as an expired token,
+    bad input, network problems) become ToolError, whose message Claude sees; mcp hides the
+    text of any other exception and reports only "Error executing tool"."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except (MoodleError, ValueError) as exc:
+            raise ToolError(str(exc)) from exc
+        except httpx.HTTPError as exc:
+            raise ToolError(f"Could not reach Moodle: {exc}") from exc
+    return mcp.tool(annotations=READ_ONLY)(wrapper)
+
+@tool
 def list_assignments(status: Literal["all", "pending","submitted"] = "all",
                      include_overdue: bool = False,
                      year: int | None = None) -> list[dict]:
@@ -36,7 +57,7 @@ def list_assignments(status: Literal["all", "pending","submitted"] = "all",
     return assignments.list_assignments(status, include_overdue, year)
 
 
-@mcp.tool(annotations=READ_ONLY)
+@tool
 def get_assignment(assignment_id: int, year: int | None = None) -> dict:
     """Full details of one assignment. Use the id from list_assignments.
 
@@ -52,7 +73,7 @@ def get_assignment(assignment_id: int, year: int | None = None) -> dict:
     return assignments.get_assignment(assignment_id, year)
 
 
-@mcp.tool(annotations=READ_ONLY)
+@tool
 def new_assignments(year: int | None = None) -> dict:
     """Assignments added or changed today, across all courses (including past-due ones).
 
@@ -70,7 +91,7 @@ def new_assignments(year: int | None = None) -> dict:
     return assignments.new_assignments(year)
 
 
-@mcp.tool(annotations=READ_ONLY)
+@tool
 def list_courses(semester: int | None = None, year: int | None = None) -> list[dict]:
     """List the student's courses for an academic year, sorted by semester then name.
 
@@ -83,7 +104,7 @@ def list_courses(semester: int | None = None, year: int | None = None) -> list[d
     return courses.list_courses(semester, year)
 
 
-@mcp.tool(annotations=READ_ONLY)
+@tool
 def get_course_staff(course_id: int, year: int | None = None) -> list[dict]:
     """The lecturer(s) and TAs of a course. course_id comes from list_courses.
 
@@ -93,7 +114,7 @@ def get_course_staff(course_id: int, year: int | None = None) -> list[dict]:
     return courses.get_course_staff(course_id, year)
 
 
-@mcp.tool(annotations=READ_ONLY)
+@tool
 def get_course_contents(course_id: int, year: int | None = None) -> list[dict]:
     """Everything posted on a course page, section by section (e.g. "Week 1", "Homeworks").
 
@@ -106,7 +127,7 @@ def get_course_contents(course_id: int, year: int | None = None) -> list[dict]:
     return courses.get_course_contents(course_id, year)
 
 
-@mcp.tool(annotations=READ_ONLY)
+@tool
 def get_grades(course_id: int | None = None, year: int | None = None) -> dict:
     """The student's grades.
 
@@ -120,7 +141,7 @@ def get_grades(course_id: int | None = None, year: int | None = None) -> dict:
     return grades.get_grades(course_id, year)
 
 
-@mcp.tool(annotations=READ_ONLY)
+@tool
 def staff_messages(days: int = 7, course_id: int | None = None, year: int | None = None) -> list[dict]:
     """What lecturers and TAs posted or sent in the last `days` days, newest first.
 
@@ -137,7 +158,7 @@ def staff_messages(days: int = 7, course_id: int | None = None, year: int | None
     return messages.staff_messages(days, course_id, year)
 
 
-@mcp.tool(annotations=READ_ONLY)
+@tool
 def upcoming_deadlines(days: int = 14, include_overdue: bool = False, year: int | None = None) -> list[dict]:
     """Things due in the next `days` days that still need action (Moodle's timeline),
     across all courses: assignments not yet submitted, quizzes not yet attempted, etc.
@@ -150,7 +171,7 @@ def upcoming_deadlines(days: int = 14, include_overdue: bool = False, year: int 
     return deadlines.upcoming_deadlines(days, include_overdue, year)
 
 
-@mcp.tool(annotations=READ_ONLY)
+@tool
 def search_moodle(query: str, page: int = 0, year: int | None = None) -> dict:
     """Moodle's site-wide search across the student's courses: forum posts, course
     sections, activities and files (by name).
@@ -162,18 +183,20 @@ def search_moodle(query: str, page: int = 0, year: int | None = None) -> dict:
     return search.search(query, page, year)
 
 
-@mcp.tool(annotations=READ_ONLY)
+@tool
 def read_content(url: str, offset: int = 0) -> dict:
-    """Read the text of a course file or Page activity, e.g. lecture slides as PDF,
-    exercise sheets, solutions, or a "Page" with links.
+    """Read the text of a course file or Page activity, e.g. lecture slides,
+    exercise sheets, solutions, notebooks, code, or a "Page" with links.
 
     url: a file url (".../pluginfile.php/...") from get_course_contents or get_assignment,
     or a Page url (".../mod/page/view.php?id=..."). Only links to the student's own
     Moodle site are accepted.
-    Returns {"name", "text", "total_chars", "next_offset"?}. PDF text is split with
-    "--- page N ---" markers. Long texts come in parts of 30,000 characters: call again
-    with offset=next_offset for the rest.
-    Reads PDF, text and HTML; not .pptx/.docx or images (look for a PDF version).
+    Returns {"name", "text", "total_chars", "next_offset"?}. Text is split with markers:
+    "--- page N ---" (PDF), "--- slide N ---" (PowerPoint, speaker notes as "[notes]"),
+    "--- cell N (type) ---" (Jupyter). Long texts come in parts of 30,000 characters:
+    call again with offset=next_offset for the rest.
+    Reads PDF, .pptx, .docx, .ipynb, text/code and HTML; not old .doc/.ppt, images or
+    video. Text inside images (e.g. scanned PDFs, diagrams) is not extracted.
     """
     return reading.read_content(url, offset)
 
