@@ -4,7 +4,7 @@ An MCP server that gives Claude read access to a student's Moodle account
 (Reichman University, `moodle.runi.ac.il`), using the same web-service API as the Moodle mobile app.
 No admin rights needed.
 
-> **Status:** work in progress. Phase 1 (assignment tools) works; Phase 2 (courses) is next.
+> **Status:** work in progress. Phases 1–2 (assignments, courses, grades) work; Phase 3 (messages) is next.
 
 ## Planned tools
 
@@ -21,9 +21,9 @@ No admin rights needed.
 | Tool | Description | Moodle API |
 |---|---|---|
 | ✅ `list_courses` | Your courses, with semester and course number | `core_enrol_get_users_courses`, `core_course_get_courses_by_field` |
-| `get_course_staff` | Lecturer (`editingteacher`) and TAs (`tutor`, `instruction_assistant`) | `core_enrol_get_enrolled_users` |
-| `get_course_contents` | Sections and activities in a course | `core_course_get_contents` |
-| `get_grades` | With a course: each grade item, grade and weight. Without: overall grade per course | `gradereport_user_get_grade_items` (needs `userid`), `gradereport_overview_get_course_grades` |
+| ✅ `get_course_staff` | Lecturer (`editingteacher`) and TAs (`tutor`, `instruction_assistant`) | `core_enrol_get_enrolled_users` |
+| ✅ `get_course_contents` | Sections and activities in a course | `core_course_get_contents` |
+| ✅ `get_grades` | With a course: each grade item, grade and weight. Without: overall grade per course | `gradereport_user_get_grade_items` (needs `userid`), `gradereport_overview_get_course_grades` |
 
 **Phase 3 – Communication**
 

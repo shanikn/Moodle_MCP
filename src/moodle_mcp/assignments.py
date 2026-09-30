@@ -1,7 +1,5 @@
 #  the logic for listing all assignments and for the snapshot comparison (options A and B)
-import html
 import json
-import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
@@ -9,39 +7,11 @@ from pathlib import Path
 
 from moodle_mcp.client import call
 from moodle_mcp.config import MOODLE_DEFAULT_YEAR, get_site
+from moodle_mcp.formatting import file_list, fmt_date, html_to_text
 
 STATUSES = ("all", "pending", "submitted")
 # project root/.state (git-ignored): remembers which assignments were already seen
 STATE_DIR = Path(__file__).resolve().parents[2] / ".state"
-
-
-def _date(ts: int) -> str | None:
-    """Moodle uses Unix timestamps; 0 means 'not set'."""
-    if ts == 0:
-        return None
-    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
-
-
-def _text(raw: str) -> str:
-    """Moodle HTML -> plain text (keeps line breaks)."""
-    raw = re.sub(r"<br\s*/?>|</p>|</div>|</li>", "\n", raw or "", flags=re.I)
-    raw = html.unescape(re.sub(r"<[^>]+>", "", raw))
-    return re.sub(r"\n\s*\n+", "\n\n", raw).strip()
-
-
-def _browser_url(fileurl: str) -> str:
-    """Web-service file links need the token; the plain pluginfile link works in a logged-in browser."""
-    return fileurl.replace("/webservice/pluginfile.php", "/pluginfile.php")
-
-
-def _files(fileareas: list[dict]) -> list[dict]:
-    return [
-        {"filename": f["filename"], "url": _browser_url(f["fileurl"])}
-        for area in fileareas
-        for f in area.get("files", [])
-        # editpdf stores one preview image per page next to the annotated combined.pdf
-        if not f["filename"].startswith("image_page")
-    ]
 
 
 def _submission_status(assign_id: int, team: bool, year: int | None) -> str:
@@ -67,8 +37,8 @@ def list_assignments(status: str = "all", include_overdue: bool = False, year: i
                 "id": a["id"],
                 "name": a["name"],
                 "course": course["fullname"],
-                "due": _date(a["duedate"]),
-                "cutoff": _date(a["cutoffdate"]),
+                "due": fmt_date(a["duedate"]),
+                "cutoff": fmt_date(a["cutoffdate"]),
                 "url": f"{site.url}/mod/assign/view.php?id={a['cmid']}",
                 "timemodified": a["timemodified"],
                 "_team": bool(a["teamsubmission"]),
@@ -109,22 +79,22 @@ def get_assignment(assignment_id: int, year: int | None = None) -> dict:
         "id": a["id"],
         "name": a["name"],
         "course": course["fullname"],
-        "due": _date(a["duedate"]),
-        "cutoff": _date(a["cutoffdate"]),
+        "due": fmt_date(a["duedate"]),
+        "cutoff": fmt_date(a["cutoffdate"]),
         "url": f"{site.url}/mod/assign/view.php?id={a['cmid']}",
-        "description": _text(a["intro"]),
-        "attachments": _files([{"files": a.get("introattachments", [])}]),
+        "description": html_to_text(a["intro"]),
+        "attachments": file_list([{"files": a.get("introattachments", [])}]),
         "submission": {
             "status": submission.get("status", "new"),
-            "last_modified": _date(submission.get("timemodified", 0)),
-            "files": _files([fa for p in submission.get("plugins", []) for fa in p.get("fileareas", [])]),
+            "last_modified": fmt_date(submission.get("timemodified", 0)),
+            "files": file_list([fa for p in submission.get("plugins", []) for fa in p.get("fileareas", [])]),
             "grading_status": attempt.get("gradingstatus"),
         },
-        "grade": _text(feedback["gradefordisplay"]) if feedback.get("gradefordisplay") else None,
+        "grade": html_to_text(feedback["gradefordisplay"]) if feedback.get("gradefordisplay") else None,
         "feedback_comments": "\n\n".join(
-            t for p in feedback_plugins for e in p.get("editorfields", []) if (t := _text(e.get("text", "")))
+            t for p in feedback_plugins for e in p.get("editorfields", []) if (t := html_to_text(e.get("text", "")))
         ) or None,
-        "feedback_files": _files([fa for p in feedback_plugins for fa in p.get("fileareas", [])]),
+        "feedback_files": file_list([fa for p in feedback_plugins for fa in p.get("fileareas", [])]),
     }
 
 

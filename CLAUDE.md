@@ -21,7 +21,7 @@ Register with Claude Code: `claude mcp add moodle -- uv run --directory <repo> m
 
 ## Architecture
 
-Layered: `server.py` (MCP tool definitions) → feature modules like `assignments.py` (logic, shaping results) → `client.py` (`call()`) → `config.py` (per-year site + token).
+Layered: `server.py` (MCP tool definitions) → feature modules `assignments.py`, `courses.py`, `grades.py` (logic, shaping results) → `client.py` (`call()`) → `config.py` (per-year site + token). Shared shaping helpers (`fmt_date`, `html_to_text`, `file_list`, `browser_url`) live in `formatting.py`.
 
 - **Per-year sites.** Each academic year is a separate Moodle site at `<MOODLE_BASE_URL>/<year>` with its own token. `config.py` collects every `MOODLE_TOKEN_<year>` env var; `get_site(year)` falls back to `MOODLE_DEFAULT_YEAR`. Every tool takes an optional `year` and threads it down to `call()`.
 - **Config loads at import time.** `config.py` reads `.env` and requires `MOODLE_BASE_URL` and `MOODLE_DEFAULT_YEAR` on import — tests must set env vars before importing any `moodle_mcp` module.

@@ -1,7 +1,7 @@
 from typing import Literal
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
-from moodle_mcp import assignments, courses
+from moodle_mcp import assignments, courses, grades
 
 mcp = MCPServer(
     "moodle",
@@ -81,6 +81,43 @@ def list_courses(semester: int | None = None, year: int | None = None) -> list[d
     Credit points, syllabus and class schedule are not stored in Moodle.
     """
     return courses.list_courses(semester, year)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def get_course_staff(course_id: int, year: int | None = None) -> list[dict]:
+    """The lecturer(s) and TAs of a course. course_id comes from list_courses.
+
+    Returns [{"name", "role"}] with role "lecturer" or "TA", lecturers first.
+    Email addresses are not visible to students.
+    """
+    return courses.get_course_staff(course_id, year)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def get_course_contents(course_id: int, year: int | None = None) -> list[dict]:
+    """Everything posted on a course page, section by section (e.g. "Week 1", "Homeworks").
+
+    Returns [{"section", "summary"?, "items": [...]}]. Each item has id, type, name and
+    url, plus: files [{filename, url}] for uploaded files (slides, recitations,
+    solutions), link for external links (e.g. Panopto recordings) and description
+    when the lecturer wrote one. Common types: resource (file), assign, forum, url,
+    page, folder, quiz, lti (Zoom/Panopto). course_id comes from list_courses.
+    """
+    return courses.get_course_contents(course_id, year)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def get_grades(course_id: int | None = None, year: int | None = None) -> dict:
+    """The student's grades.
+
+    Without course_id: {"courses": [{course_id, course, grade}]}, the current overall
+    grade in every course (null = no grade yet).
+    With course_id: {"course_id", "total", "items": [{name, grade, range, weight,
+    feedback?}]}, every grade item in that course. grade null = not graded yet;
+    weight is the item's share of the final grade. Items worth 0 % (e.g. attendance,
+    alternative exam dates) do not count toward the total.
+    """
+    return grades.get_grades(course_id, year)
 
 
 def main() -> None:
