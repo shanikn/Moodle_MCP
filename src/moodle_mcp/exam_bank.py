@@ -3,6 +3,7 @@ import html
 import re
 
 from moodle_mcp import runi
+from moodle_mcp.yedion_files import button_arguments, hidden_fields
 from moodle_mcp.yedion_forms import grids, options, text
 
 # menu item "בנק בחינות": a search form whose "חיפוש" button posts ExamBank with arguments that
@@ -61,31 +62,41 @@ def _number_or_text(value: str):
     return int(value) if value.isdigit() else value or None
 
 
-def parse_results(page: str) -> list[dict]:
-    """Rows of the results grid ("סימון | בית ספר | קוד קורס | קורס | ... | קובץ")."""
-    results = next((rows for header, rows in grids(page) if "קוד קורס" in header and "מועד" in header), None)
+def _rows(page: str) -> list[dict[str, str]]:
+    """Result rows ("סימון | בית ספר | קוד קורס | קורס | ... | קובץ") with each cell's HTML."""
+    results = next((rows for header, rows in grids(page, raw=True) if "קוד קורס" in header and "מועד" in header), None)
     if results is None:
         if NO_RESULTS in page:
             return []
         raise runi.RuniError("Yedion's exam bank page has no results table; the page layout may have changed.")
-    exams = []
-    for row in results:
-        year = re.search(r"\((\d{4})\)", row.get("שנה", ""))  # 'תשפ"ה (2025)'
-        exams.append({
-            "course": row.get("קורס"),
-            "course_number": row.get("קוד קורס"),
-            "school": row.get("בית ספר") or None,
-            "type": row.get("סוג מקצוע") or None,
-            "year": int(year.group(1)) if year else None,
-            "semester": _number_or_text(row.get("סמסטר", "")),
-            "moed": _number_or_text(row.get("מועד", "")),
-            "lecturer": row.get("מרצה") or None,
-        })
-    return sorted(exams, key=lambda e: (-(e["year"] or 0), str(e["semester"]), str(e["moed"])))
+    return results
 
 
-def search_exam_bank(course: str, lecturer: str | None = None, year: int | None = None,
-                     semester: int | None = None, language: str = "all") -> list[dict]:
+def _parse_row(row: dict[str, str]) -> dict:
+    cell = {key: text(value) for key, value in row.items()}
+    year = re.search(r"\((\d{4})\)", cell.get("שנה", ""))  # 'תשפ"ה (2025)'
+    return {
+        "course": cell.get("קורס"),
+        "course_number": cell.get("קוד קורס"),
+        "school": cell.get("בית ספר") or None,
+        "type": cell.get("סוג מקצוע") or None,
+        "year": int(year.group(1)) if year else None,
+        "semester": _number_or_text(cell.get("סמסטר", "")),
+        "moed": _number_or_text(cell.get("מועד", "")),
+        "lecturer": cell.get("מרצה") or None,
+    }
+
+
+def _sort_key(exam: dict):
+    return (-(exam["year"] or 0), str(exam["semester"]), str(exam["moed"]))
+
+
+def parse_results(page: str) -> list[dict]:
+    return sorted((_parse_row(row) for row in _rows(page)), key=_sort_key)
+
+
+def _search(course: str, lecturer: str | None, year: int | None, semester: int | None, language: str) -> str:
+    """Run a search and return the results page (two requests)."""
     course = course.strip()
     if not course:
         raise ValueError("Give a course name (or part of it) or a course number.")
@@ -106,4 +117,28 @@ def search_exam_bank(course: str, lecturer: str | None = None, year: int | None 
         if str(semester) not in options(page, "R1C5"):
             raise ValueError(f"Invalid semester {semester}: use 1, 2, ... or omit it for all semesters.")
         fields["R1C5"] = str(semester)
-    return parse_results(runi.fetch("ExamBank", _search_arguments(page), **fields))
+    return runi.fetch("ExamBank", _search_arguments(page), **fields)
+
+
+def search_exam_bank(course: str, lecturer: str | None = None, year: int | None = None,
+                     semester: int | None = None, language: str = "all") -> list[dict]:
+    return parse_results(_search(course, lecturer, year, semester, language))
+
+
+def open_file(course: str, year: int, semester: int, moed: int | str, lecturer: str | None = None) -> tuple[dict, bytes]:
+    """Find one past exam and download its file (the "הורדה" button). Returns (exam, pdf)."""
+    page = _search(course, lecturer, year, semester, "all")
+    matches = [(row, exam) for row in _rows(page) for exam in [_parse_row(row)]
+               if exam["moed"] == moed and exam["year"] == year and exam["semester"] == semester]
+    if not matches:
+        raise ValueError(f"No exam bank file for {course}, {year} semester {semester}, moed {moed}. "
+                         "List them with search_exam_bank.")
+    distinct = {(exam["lecturer"], exam["school"]) for _, exam in matches}
+    if len({lecturer_ for lecturer_, _ in distinct}) > 1:
+        names = sorted({lecturer_ or "?" for lecturer_, _ in distinct})
+        raise ValueError(f"{len(names)} exams match ({', '.join(names)}): pass the lecturer.")
+    row, exam = matches[0]  # same lecturer: the same exam listed once per school
+    arguments = button_arguments(row.get("קובץ", ""), "ExamBank", kind="-N10")
+    if arguments is None:
+        raise ValueError("This exam bank entry has no file to download.")
+    return exam, runi.fetch_file("ExamBank", arguments, **hidden_fields(page))

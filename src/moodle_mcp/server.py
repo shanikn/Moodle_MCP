@@ -1,13 +1,14 @@
+import json
 from functools import wraps
 from typing import Literal
 
 import httpx
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import ToolAnnotations
+from mcp.types import TextContent, ToolAnnotations
 
 from moodle_mcp import (assignments, calendar, courses, deadlines, exam_bank, exams, grades, messages, notebooks,
-                        reading, schedule, search)
+                        reading, schedule, search, yedion_files)
 from moodle_mcp.client import MoodleError
 from moodle_mcp.runi import RuniError
 
@@ -315,6 +316,57 @@ def exam_notebooks(year: int | None = None, semester: int | None = None) -> dict
     whole year.
     """
     return {"exams": notebooks.exam_notebooks(year, semester)}
+
+
+def _pages(exam: dict, pdf: bytes | None, first_page: int, last_page: int | None) -> list[TextContent | Image]:
+    """One JSON text block (the exam, page counts and any text layer) followed by one image per page."""
+    if pdf is None:
+        note = {"exam": exam, "message": "Confidential exam: Yedion does not show its files, so nothing was opened."}
+        return [TextContent(type="text", text=json.dumps(note, ensure_ascii=False))]
+    info, jpegs = yedion_files.render_pages(pdf, first_page, last_page)
+    summary = TextContent(type="text", text=json.dumps({"exam": exam, **info}, ensure_ascii=False))
+    return [summary, *(Image(data=jpeg, format="jpeg") for jpeg in jpegs)]
+
+
+@tool
+def read_exam_notebook_file(course_number: str, moed: int | Literal["special"],
+                            file: Literal["exam_paper", "answer_key", "notebook"],
+                            year: int | None = None, semester: int | None = None,
+                            first_page: int = 1, last_page: int | None = None) -> list[TextContent | Image]:
+    """Open a file of one of the student's graded exams (from exam_notebooks): the exam paper /
+    solution, the multiple-choice answer key, or the student's own scanned answer notebook.
+    Returns the pages as images (scans have no text), at most 10 per call, preceded by a JSON
+    block: {"exam": {...}, "pages_total", "pages": [first, last], "text": {page: text layer, only
+    for pages that have one}, "next_first_page" if more pages remain}. Confidential exams are
+    reported and never opened. Downloads the whole file each call (3 requests); nothing is stored.
+
+    course_number, moed (1, 2, ... or "special"), year and semester identify the exam as listed by
+    exam_notebooks (year defaults to the current academic year; semester narrows it if a course
+    has several exams with the same moed). first_page / last_page: 1-based page range.
+    """
+    if first_page < 1:
+        raise ValueError("first_page starts at 1.")
+    exam, pdf = notebooks.open_file(course_number, moed, file, year, semester)
+    return _pages(exam, pdf, first_page, last_page)
+
+
+@tool
+def read_exam_bank_file(course: str, year: int, semester: int, moed: int, lecturer: str | None = None,
+                        first_page: int = 1, last_page: int | None = None) -> list[TextContent | Image]:
+    """Open a past exam from the exam bank (from search_exam_bank). Returns the pages as images
+    (the bank's files are scans without text), at most 10 per call, preceded by a JSON block:
+    {"exam": {...}, "pages_total", "pages": [first, last], "text": {page: text layer, if any},
+    "next_first_page" if more pages remain}. Downloads the whole file each call (3 requests);
+    nothing is stored.
+
+    course (number or name, as for search_exam_bank), year, semester and moed identify the exam;
+    lecturer is needed when several lecturers' exams match. first_page / last_page: 1-based
+    page range.
+    """
+    if first_page < 1:
+        raise ValueError("first_page starts at 1.")
+    exam, pdf = exam_bank.open_file(course, year, semester, moed, lecturer)
+    return _pages(exam, pdf, first_page, last_page)
 
 def main() -> None:
     """Run over stdio (default, for the Claude desktop app / Claude Code), or over HTTP

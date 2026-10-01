@@ -78,7 +78,7 @@ YEDION_HOME = '<button data-progname="MenuCall" data-arguments="-N,-N,-N97," id=
 class FakeRuni:
     """My RUNI login (F5), the F5 single-sign-on hop, the SAML IdP and Yedion, with cookie sessions.
 
-    runi_site.pages[PRGNAME] = html   what Yedion returns for a program
+    runi_site.pages[PRGNAME] = html   what Yedion returns for a program (bytes: a PDF download)
     runi_site.posts                   form data of every fireflyweb.aspx POST
     runi_site.events                  "password", "logout", "sso" and "sso-bounce" in order
     runi_site.password_posts          how many times the password was sent
@@ -177,7 +177,11 @@ class FakeRuni:
             return httpx.Response(302, headers={"Location": "https://my.runi.ac.il/my.policy"})
         form = dict(parse_qsl(request.content.decode(), keep_blank_values=True))
         self.posts.append(form)
-        return httpx.Response(200, text=self.pages[form["PRGNAME"]])  # KeyError = page not set up
+        page = self.pages[form["PRGNAME"]]  # KeyError = page not set up
+        if isinstance(page, bytes):  # a file button: Yedion answers with the PDF itself
+            return httpx.Response(200, content=page, headers={"Content-Type": "Application/pdf",
+                                                              "Content-Disposition": 'attachment; filename="exam.pdf"'})
+        return httpx.Response(200, text=page)
 
 
 @pytest.fixture
@@ -202,3 +206,25 @@ def runi_site(monkeypatch):
         router.post("https://yedion.runi.ac.il/yedion/fireflyweb.aspx").mock(side_effect=fake.firefly_post)
         fake.router = router
         yield fake
+
+
+def make_pdf(pages: list[str | None]) -> bytes:
+    """A small valid PDF in memory: one A4 page per item, with that text (or blank for None)."""
+    objects = ["<< /Type /Catalog /Pages 2 0 R >>", None, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    kids = []
+    for text in pages:
+        stream = f"BT /F1 24 Tf 72 720 Td ({text}) Tj ET" if text else ""
+        objects.append(f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream")
+        objects.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents {len(objects)} 0 R "
+                       "/Resources << /Font << /F1 3 0 R >> >> >>")
+        kids.append(f"{len(objects)} 0 R")
+    objects[1] = f"<< /Type /Pages /Kids [{' '.join(kids)}] /Count {len(kids)} >>"
+    out, offsets = b"%PDF-1.4\n", []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += f"{number} 0 obj\n{body}\nendobj\n".encode()
+    xref = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode()
+    out += b"".join(f"{offset:010d} 00000 n \n".encode() for offset in offsets)
+    out += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    return out

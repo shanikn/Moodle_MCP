@@ -41,6 +41,7 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 LOGGED_IN_MARKER = 'id="ExitStudent"'  # the "יציאה" (log out) button on every logged-in page
 MAX_PASSWORD_LOGINS = 3                # per process, per PASSWORD_WINDOW seconds
 PASSWORD_WINDOW = 3600
+MAX_FILE_BYTES = 50_000_000            # refuse anything larger (files are held in memory)
 
 
 class RuniError(Exception):
@@ -194,3 +195,24 @@ def fetch(prgname: str, arguments: str, **fields) -> str:
     if not _is_logged_in(response):
         raise RuniError(f"Yedion logged us out again right after logging in (got {_where(response)}).")
     return response.text
+
+
+def fetch_file(prgname: str, arguments: str, **fields) -> bytes:
+    """POST a file button from a page that was just fetched (its hidden form fields plus the
+    button's PRGNAME / ARGUMENTS) and return the PDF bytes. Kept in memory only: never written to
+    disk or cached. No renewal here: the button's arguments belong to the page they came from, so
+    on an expired session the caller's next call fetches a fresh page (and renews) first."""
+    data = {**fields, "PRGNAME": prgname, "ARGUMENTS": arguments}
+    try:
+        client, _ = _ensure_login(None)
+        response = client.post(FIREFLY_URL, data=data)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise RuniError(f"Could not reach Yedion / My RUNI ({type(exc).__name__}).") from None
+    body = response.content
+    if not body.startswith(b"%PDF"):
+        kind = response.headers.get("content-type", "unknown").split(";")[0]
+        raise RuniError(f"Yedion did not return a PDF file (got {kind} from {_where(response)}).")
+    if len(body) > MAX_FILE_BYTES:
+        raise RuniError(f"The file is larger than {MAX_FILE_BYTES // 1_000_000} MB; not opening it.")
+    return body

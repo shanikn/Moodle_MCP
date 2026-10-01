@@ -16,7 +16,8 @@ NO_EXAMS = (FIXTURES / "yedion_no_exams.html").read_text(encoding="utf-8")
 
 TOOLS = {"list_assignments", "get_assignment", "new_assignments", "list_courses",
          "get_course_staff", "get_course_contents", "get_grades", "staff_messages",
-         "upcoming_deadlines", "calendar_events", "search_moodle", "read_content", "exam_schedule", "class_schedule", "search_exam_bank", "exam_notebooks"}
+         "upcoming_deadlines", "calendar_events", "search_moodle", "read_content", "exam_schedule", "class_schedule", "search_exam_bank", "exam_notebooks",
+         "read_exam_notebook_file", "read_exam_bank_file"}
 
 
 def call_tool(name, args):

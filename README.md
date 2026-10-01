@@ -47,6 +47,8 @@ No admin rights needed.
 | ✅ `class_schedule` | Your timetable for a year / semester (default: current academic year, whole year): each lecture / tutorial with day, start and end time, room, lecturer, group, credits, weekly hours and Yedion's notes; total credits | רשימת מערכת שעות (`StudentQueryExecution`, QueryCode 3) |
 | ✅ `search_exam_bank` | Past exams of a course (by number or name), optionally by lecturer, year, semester and language: year, semester, moed, lecturer, school. Lists exams, doesn't download them | בנק בחינות (`ExamBank`) |
 | ✅ `exam_notebooks` | Your graded exams for a year / semester: grade, appeal deadline and status, and which files exist (exam paper / solution, multiple-choice key, your scanned notebook). Doesn't open files or file appeals | מחברות בחינה (`StudentQueryExecution`, QueryCode 482) |
+| ✅ `read_exam_notebook_file` | Open a graded exam's file (exam paper / solution, answer key, your scanned notebook): pages as images, max 10 per call, plus any text layer. Confidential exams are reported, never opened | `NoteBooks_Open_Do` |
+| ✅ `read_exam_bank_file` | Open a past exam from the exam bank: pages as images, max 10 per call | `ExamBank` (download) |
 
 Planned: exam notebooks (בנק בחינות), student requests (פניה למנהל סטודנטים, מעקב פניות).
 
@@ -131,6 +133,7 @@ src/moodle_mcp/
   schedule.py     # Yedion class timetable
   exam_bank.py    # Yedion exam bank search
   notebooks.py    # Yedion exam notebooks (grades, appeal status, available files)
+  yedion_files.py # renders Yedion PDFs to page images in memory (pypdfium2)
   redact.py       # masks ids and tokens in errors and debug output
   server.py       # FastMCP tool definitions
 docs/
