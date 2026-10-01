@@ -1,0 +1,31 @@
+<!-- Anonymized copy of a Yedion student query form (here "רשימת מערכת שעות", MenuCall -N,-N,-N3,-A):
+     same markup, fake id and token -->
+<html><head><title>רשימת מערכת שעות</title></head><body>
+<button type="button" data-progname="MenuCall" data-arguments="-N,-N,-N97," data-target="" id="ExitStudent" class="menu-link px-5 ButtonH">יציאה </button>
+<main><article>
+<form name="form" action="fireflyweb.aspx" method="post" class="form-horizontal">
+<input type="hidden" name="PRGNAME">
+<input type="hidden" name="ARGUMENTS">
+<input type="hidden" name="TZ" value="000000018">
+<input type="hidden" name="Token" value="00000000-test-page-token">
+<input type="hidden" name="QueryCode" value="3">
+<div>  </div>
+<h2 class="card-header-H2"> רשימת מערכת שעות - מסך הזמנה</h2>
+<div class="FilterPanel">
+<div class="FilterCol"><label for="R1C1"> שנה </label>
+<select name="R1C1" id="R1C1" class="Width150">
+	<option value="" disabled hidden > בחירת שנה </option>
+	<option value="2027">2027 - תשפ"ז</option>
+	<option selected value="2026">2026 - תשפ"ו</option>
+	<option value="2025">2025 - תשפ"ה</option>
+</select></div>
+<div class="FilterCol"><label for="R1C2"> סמסטר </label>
+<select name="R1C2" id="R1C2" class="Width150">
+	<option disabled aria-label="בחירת שנה">בחירת שנה</option><option value=0>שנתי</option><option Selected value=1>1</option><option value=2>2</option><option value=3>3</option>
+</select></div>
+</div>
+<br>
+<div class="TextCenter"> <button type="button" class="btn btn-primary rounded " data-progname="StudentQueryExecution" data-arguments="TZ,Token,QueryCode,R1C1,R1C2"> ביצוע</button> </div>
+</form>
+</article></main>
+</body></html>

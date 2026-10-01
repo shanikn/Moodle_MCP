@@ -44,12 +44,13 @@ No admin rights needed.
 | Tool | Description | Yedion page |
 |---|---|---|
 | ✅ `exam_schedule` | Exams for a year (default: the current academic year by date, Oct–Sep) / semester: course, moed, type, date, start time, room, registration status, appeal deadline; courses with an alternative assessment (הערכה חלופית) are marked | לוח בחינות (`HADPASAT_TOCHNIT_BEHINOT`) |
+| ✅ `class_schedule` | Your timetable for a year / semester (default: current academic year, whole year): each lecture / tutorial with day, start and end time, room, lecturer, group, credits, weekly hours and Yedion's notes; total credits | רשימת מערכת שעות (`StudentQueryExecution`, QueryCode 3) |
 
 Planned: exam notebooks (בנק בחינות), student requests (פניה למנהל סטודנטים, מעקב פניות).
 
 **Later / optional:** write actions (e.g. submitting an assignment).
 
-**Not available in Moodle:** syllabus, credit points and class schedule. These live in the
+**Not available in Moodle:** syllabus, credit points and class schedule (the last two come from Yedion via `class_schedule`). These live in the
 university's own systems and would need a separate data source.
 
 Every tool takes an optional `year` (defaults to `MOODLE_DEFAULT_YEAR`).
@@ -124,6 +125,9 @@ src/moodle_mcp/
   assignments.py  # assignment listing + new-assignment detection
   runi.py         # My RUNI single sign-on into Yedion, page fetches
   exams.py        # Yedion exam schedule
+  yedion_forms.py # shared Yedion helpers: query forms, result grids
+  schedule.py     # Yedion class timetable
+  redact.py       # masks ids and tokens in errors and debug output
   server.py       # FastMCP tool definitions
 docs/
   moodle_functions.md  # API functions available to the token

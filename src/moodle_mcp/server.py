@@ -6,7 +6,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from moodle_mcp import assignments, calendar, courses, deadlines, exams, grades, messages, reading, search
+from moodle_mcp import assignments, calendar, courses, deadlines, exams, grades, messages, reading, schedule, search
 from moodle_mcp.client import MoodleError
 from moodle_mcp.runi import RuniError
 
@@ -14,7 +14,7 @@ mcp = MCPServer(
     "moodle",
     instructions=("Access to a student's Reichman University Moodle. Each academic year is a separate site; "
     "tools default to the current year unless 'year' is given. Dates are local Israel time. "
-    "exam_schedule reads the university's student info station (Yedion) instead of Moodle."),
+    "exam_schedule and class_schedule read the university's student info station (Yedion) instead of Moodle."),
 )
 
 READ_ONLY = ToolAnnotations(read_only_hint=True)
@@ -251,6 +251,27 @@ def exam_schedule(year: int | None = None, semester: int | None = None) -> dict:
     """
     return {"exams": exams.exam_schedule(year, semester)}
 
+
+
+@tool
+def class_schedule(year: int | None = None, semester: int | None = None) -> dict:
+    """The student's class timetable (רשימת מערכת שעות) from Yedion, the university's student
+    info station (not Moodle): every lecture, tutorial (תרגול) and other session they are
+    registered for. Two requests per call.
+
+    Returns {"courses": [...], "total_credits": float, "total_weekly_hours": float}. Each course
+    entry (a course can appear once per session type) has: course, course_number (string),
+    semester, type (e.g. "שיעור", "תרגול", "מכינה"), group (tutorial group number or null),
+    lecturer, credits (נקודות זכות, null on tutorial rows), weekly_hours (ש"ס), meetings
+    ([{"day": "Monday", "start": "08:45", "end": "11:15"}]; empty for courses without fixed
+    times, e.g. online), room (null if none) and notes (Yedion's remarks, e.g. "קורס מקוון").
+    Sorted by semester, weekday and start time.
+
+    year: academic year as in Moodle (2027 = Oct 2026 - Sep 2027, תשפ"ז); defaults to the
+    current one by today's date. semester: 1, 2, ... for one semester; omit (or 0) for the
+    whole year.
+    """
+    return schedule.class_schedule(year, semester)
 
 def main() -> None:
     """Run over stdio (default, for the Claude desktop app / Claude Code), or over HTTP

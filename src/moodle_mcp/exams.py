@@ -1,9 +1,9 @@
 # the student's exam schedule (לוח בחינות) from Yedion
-import html
 import re
-from datetime import date, datetime
+from datetime import datetime
 
 from moodle_mcp import runi
+from moodle_mcp.yedion_forms import current_academic_year, hidden, options, text
 
 # menu item "לוח בחינות" opens a form (year R1C1, semester R1C2, moed Terms); "ביצוע" submits it
 FORM = ("MenuCall", "-N,-N,-N6,-A")
@@ -11,25 +11,6 @@ SUBMIT = ("HADPASAT_TOCHNIT_BEHINOT", "TZ,Token,R1C1,R1C2,R1C3")
 ROOM_NOT_SET = "טרם נקבע"
 SPECIAL_MOED = "מועד מיוחד"
 NO_EXAMS = "אין מידע ליצירת תוכנית בחינות"  # shown instead of the grid when nothing matches
-
-
-def _text(fragment: str) -> str:
-    """HTML cell -> plain text ("&nbsp;" and tags removed)."""
-    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", fragment))).strip()
-
-
-def _options(page: str, select: str) -> list[str]:
-    """Numeric option values of a <select> (skips the disabled "choose..." placeholder)."""
-    block = re.search(rf'(?s)<select[^>]*name="{select}".*?</select>', page)
-    return re.findall(r'<option[^>]*value="?(\d+)"?', block.group()) if block else []
-
-
-def _hidden(page: str, name: str) -> str:
-    # these hold the student's id and a page token: keep them out of error messages
-    match = re.search(rf'<input[^>]*name="{name}"[^>]*value="([^"]*)"', page)
-    if not match:
-        raise runi.RuniError(f"Yedion's exam schedule form is missing the {name} field; the page layout may have changed.")
-    return match.group(1)
 
 
 def _date(value: str) -> str | None:
@@ -58,7 +39,7 @@ def parse_exams(page: str, semester: int | None = None) -> list[dict]:
         return []
     if start < 0:
         raise runi.RuniError("Yedion's exam schedule page has no results table; the page layout may have changed.")
-    rows = [[_text(cell) for cell in re.findall(r'(?s)<div class="col[^"]*">(.*?)</div>', row)]
+    rows = [[text(cell) for cell in re.findall(r'(?s)<div class="col[^"]*">(.*?)</div>', row)]
             for row in re.split(r'<div class="row[^"]*">', page[start:])[1:]]
     header = rows[0] if rows else []
     if "קוד קורס" not in header or "תאריך" not in header:
@@ -89,22 +70,15 @@ def parse_exams(page: str, semester: int | None = None) -> list[dict]:
     return sorted(exams, key=lambda e: (e["date"] or "9999", e["start"] or ""))
 
 
-def current_academic_year(today: date | None = None) -> int:
-    """Academic years run October to September and are named by the year they end in:
-    2026-10-01 .. 2027-09-30 is 2027 (תשפ"ז)."""
-    today = today or date.today()
-    return today.year + 1 if today.month >= 10 else today.year
-
-
 def exam_schedule(year: int | None = None, semester: int | None = None) -> list[dict]:
     year = current_academic_year() if year is None else year
     form = runi.fetch(*FORM)
-    years = _options(form, "R1C1")
+    years = options(form, "R1C1")
     if str(year) not in years:
         raise ValueError(f"Yedion has no exam schedule for {year}. Available years: {', '.join(years)}.")
-    semesters = _options(form, "R1C2")
+    semesters = options(form, "R1C2")
     if str(semester or 0) not in semesters:
         raise ValueError(f"Invalid semester {semester}: use one of {', '.join(semesters)} (0 = the whole year).")
-    page = runi.fetch(*SUBMIT, TZ=_hidden(form, "TZ"), Token=_hidden(form, "Token"),
+    page = runi.fetch(*SUBMIT, TZ=hidden(form, "TZ"), Token=hidden(form, "Token"),
                       R1C1=str(year), R1C2=str(semester or 0), Terms="0")
     return parse_exams(page, semester)
