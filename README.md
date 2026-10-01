@@ -45,6 +45,7 @@ No admin rights needed.
 |---|---|---|
 | ✅ `exam_schedule` | Exams for a year (default: the current academic year by date, Oct–Sep) / semester: course, moed, type, date, start time, room, registration status, appeal deadline; courses with an alternative assessment (הערכה חלופית) are marked | לוח בחינות (`HADPASAT_TOCHNIT_BEHINOT`) |
 | ✅ `class_schedule` | Your timetable for a year / semester (default: current academic year, whole year): each lecture / tutorial with day, start and end time, room, lecturer, group, credits, weekly hours and Yedion's notes; total credits | רשימת מערכת שעות (`StudentQueryExecution`, QueryCode 3) |
+| ✅ `search_exam_bank` | Past exams of a course (by number or name), optionally by lecturer, year, semester and language: year, semester, moed, lecturer, school. Lists exams, doesn't download them | בנק בחינות (`ExamBank`) |
 
 Planned: exam notebooks (בנק בחינות), student requests (פניה למנהל סטודנטים, מעקב פניות).
 
@@ -127,6 +128,7 @@ src/moodle_mcp/
   exams.py        # Yedion exam schedule
   yedion_forms.py # shared Yedion helpers: query forms, result grids
   schedule.py     # Yedion class timetable
+  exam_bank.py    # Yedion exam bank search
   redact.py       # masks ids and tokens in errors and debug output
   server.py       # FastMCP tool definitions
 docs/

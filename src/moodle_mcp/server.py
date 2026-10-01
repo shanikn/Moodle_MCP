@@ -6,7 +6,8 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from moodle_mcp import assignments, calendar, courses, deadlines, exams, grades, messages, reading, schedule, search
+from moodle_mcp import (assignments, calendar, courses, deadlines, exam_bank, exams, grades, messages, reading,
+                        schedule, search)
 from moodle_mcp.client import MoodleError
 from moodle_mcp.runi import RuniError
 
@@ -14,7 +15,8 @@ mcp = MCPServer(
     "moodle",
     instructions=("Access to a student's Reichman University Moodle. Each academic year is a separate site; "
     "tools default to the current year unless 'year' is given. Dates are local Israel time. "
-    "exam_schedule and class_schedule read the university's student info station (Yedion) instead of Moodle."),
+    "exam_schedule, class_schedule and search_exam_bank read the university's student info station (Yedion) "
+    "instead of Moodle."),
 )
 
 READ_ONLY = ToolAnnotations(read_only_hint=True)
@@ -272,6 +274,26 @@ def class_schedule(year: int | None = None, semester: int | None = None) -> dict
     whole year.
     """
     return schedule.class_schedule(year, semester)
+
+
+@tool
+def search_exam_bank(course: str, lecturer: str | None = None, year: int | None = None,
+                     semester: int | None = None,
+                     language: Literal["all", "hebrew", "english"] = "all") -> dict:
+    """Past exams of a course in the university's exam bank (בנק בחינות, in Yedion, not Moodle),
+    newest first. Two requests per call.
+
+    Returns {"exams": [...]}. Each exam: course, course_number, school, type (e.g. "מבחן סופי"),
+    year (academic year, 2026 = 2025/26), semester, moed (1, 2, 3, ...) and lecturer. This lists
+    which exams exist; it does not download them. Some exams are listed more than once.
+
+    course: course number (e.g. "109") or name or part of it in Hebrew or English as Yedion
+    lists it (e.g. "מבוא להסתברות"). A name matching several courses is an error listing them
+    with their numbers; call again with the number.
+    lecturer: name or part of it, to keep only that lecturer's exams.
+    year / semester: keep only that academic year / semester. language: the exam's language.
+    """
+    return {"exams": exam_bank.search_exam_bank(course, lecturer, year, semester, language)}
 
 def main() -> None:
     """Run over stdio (default, for the Claude desktop app / Claude Code), or over HTTP

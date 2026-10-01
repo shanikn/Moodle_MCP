@@ -175,7 +175,7 @@ class FakeRuni:
     def firefly_post(self, request):
         if not self._yedion_session(request):  # Yedion sends logged-out users to the My RUNI login
             return httpx.Response(302, headers={"Location": "https://my.runi.ac.il/my.policy"})
-        form = dict(parse_qsl(request.content.decode()))
+        form = dict(parse_qsl(request.content.decode(), keep_blank_values=True))
         self.posts.append(form)
         return httpx.Response(200, text=self.pages[form["PRGNAME"]])  # KeyError = page not set up
 
