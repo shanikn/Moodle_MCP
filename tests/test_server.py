@@ -1,5 +1,8 @@
 import asyncio
 import json
+import os
+import subprocess
+import sys
 
 import httpx
 import pytest
@@ -56,6 +59,26 @@ def test_network_error_message_reaches_claude(moodle):
     moodle.router.routes[0].side_effect = httpx.ConnectError("connection refused")
     with pytest.raises(ToolError, match="Could not reach Moodle: connection refused"):
         call_tool("list_courses", {})
+
+
+def test_server_starts_without_yedion_credentials():
+    # the hosted server deploys from main: missing RUNI_* must only break exam_schedule
+    env = {k: v for k, v in os.environ.items() if not k.startswith("RUNI_")}
+    code = ("import dotenv; dotenv.load_dotenv = lambda *a, **k: False; import asyncio; "
+            "from moodle_mcp.server import mcp; print(len(asyncio.run(mcp.list_tools())))")
+    result = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert int(result.stdout) == len(TOOLS)
+
+
+def test_missing_yedion_credentials_only_fail_exam_schedule(runi_site, moodle, monkeypatch):
+    monkeypatch.delenv("RUNI_USERNAME")
+    monkeypatch.delenv("RUNI_PASSWORD")
+    with pytest.raises(ToolError, match="Yedion login is not configured"):
+        call_tool("exam_schedule", {})
+    moodle.on("core_enrol_get_users_courses", [])
+    assert json.loads(call_tool("list_courses", {}).content[0].text) == {"courses": []}
+    assert runi_site.password_posts == 0
 
 
 def test_yedion_error_message_reaches_claude(runi_site):
