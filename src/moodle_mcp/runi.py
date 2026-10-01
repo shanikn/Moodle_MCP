@@ -84,9 +84,10 @@ def _sso(client: httpx.Client) -> bool:
     """Steps 3-4 on the client's My RUNI session. False if My RUNI sent us to its login page
     (its session is gone); RuniError on anything else unexpected."""
     response = client.get(SSO_START_URL)
-    response.raise_for_status()
+    # check before raise_for_status: after a logout the hop ends in a 404 on My RUNI itself
     if response.url.host == "my.runi.ac.il":
         return False
+    response.raise_for_status()
     action, fields = _saml_form(response)
     response = client.post(action, data=fields)
     response.raise_for_status()

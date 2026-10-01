@@ -149,7 +149,9 @@ class FakeRuni:
             self.events.append("sso")
             return httpx.Response(302, headers={"Location": "https://auth.runi.ac.il/saml/idp/profile/redirectorpost/sso?SAMLRequest=req"})
         self.events.append("sso-bounce")
-        return httpx.Response(302, headers={"Location": "/my.policy"})
+        if self.sso_bounces:  # seen live when F5 refused the hop on a fresh session: back to the login page
+            return httpx.Response(302, headers={"Location": "/my.policy"})
+        return httpx.Response(404, text="Not Found")  # seen live after /my.logout.php3: the hop itself 404s
 
     def saml_idp(self, request):
         return httpx.Response(200, text=(
