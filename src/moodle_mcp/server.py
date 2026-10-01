@@ -6,27 +6,29 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from moodle_mcp import assignments, calendar, courses, deadlines, grades, messages, reading, search
+from moodle_mcp import assignments, calendar, courses, deadlines, exams, grades, messages, reading, search
 from moodle_mcp.client import MoodleError
+from moodle_mcp.runi import RuniError
 
 mcp = MCPServer(
     "moodle",
     instructions=("Access to a student's Reichman University Moodle. Each academic year is a separate site; "
-    "tools default to the current year unless 'year' is given. Dates are local Israel time."),
+    "tools default to the current year unless 'year' is given. Dates are local Israel time. "
+    "exam_schedule reads the university's student info station (Yedion) instead of Moodle."),
 )
 
 READ_ONLY = ToolAnnotations(read_only_hint=True)
 
 
 def tool(fn):
-    """Register a read-only tool. Expected failures (Moodle errors such as an expired token,
-    bad input, network problems) become ToolError, whose message Claude sees; mcp hides the
+    """Register a read-only tool. Expected failures (Moodle or Yedion errors such as an expired
+    token or a refused login, bad input, network problems) become ToolError, whose message Claude sees; mcp hides the
     text of any other exception and reports only "Error executing tool"."""
     @wraps(fn)
     def wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
-        except (MoodleError, ValueError) as exc:
+        except (MoodleError, RuniError, ValueError) as exc:
             raise ToolError(str(exc)) from exc
         except httpx.HTTPError as exc:
             raise ToolError(f"Could not reach Moodle: {exc}") from exc
@@ -226,6 +228,28 @@ def read_content(url: str, offset: int = 0) -> dict:
     video. Text inside images (e.g. scanned PDFs, diagrams) is not extracted.
     """
     return reading.read_content(url, offset)
+
+
+@tool
+def exam_schedule(year: int | None = None, semester: int | None = None) -> dict:
+    """The student's exam schedule (לוח בחינות) from Yedion, the university's student info
+    station (not Moodle), sorted by date. Logs in with the student's university account on
+    first use; two requests per call.
+
+    Returns {"exams": [...]}. Each item: course, course_number (string), lecturer, semester,
+    moed (1, 2, ... or "special" for מועד מיוחד), type (e.g. "מבחן סופי", "מבחן סופי - Campus"),
+    date ("YYYY-MM-DD"), start ("HH:MM"), room (text, or null while not yet assigned; often
+    "the location is published about an hour before the exam"), registered (true / false,
+    null if the status is unrecognised), appeal_deadline ("YYYY-MM-DD" or null) and
+    alternative_assessment: null for a normal exam, otherwise Yedion's text for the alternative
+    assessment (e.g. a final project instead of an exam) - mention it, the student does not sit
+    an exam in that course.
+
+    year: academic year as in Moodle (2027 = Oct 2026 - Sep 2027, תשפ"ז); defaults to the
+    current one by today's date (not MOODLE_DEFAULT_YEAR).
+    semester: 1, 2, ... for one semester; omit (or 0) for the whole year.
+    """
+    return {"exams": exams.exam_schedule(year, semester)}
 
 
 def main() -> None:

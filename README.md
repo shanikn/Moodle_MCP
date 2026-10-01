@@ -39,6 +39,14 @@ No admin rights needed.
 | ✅ `read_content` | Text of course files (PDF, PowerPoint, Word, Jupyter, code, HTML) or Page activities, in 30k-character parts | `mod_page_get_pages_by_courses` + file download |
 | ✅ `search_moodle` | Moodle global search across your courses | `core_search_get_results` |
 
+**Yedion – the university's student info station** (`yedion.runi.ac.il`, not Moodle)
+
+| Tool | Description | Yedion page |
+|---|---|---|
+| ✅ `exam_schedule` | Exams for a year (default: the current academic year by date, Oct–Sep) / semester: course, moed, type, date, start time, room, registration status, appeal deadline; courses with an alternative assessment (הערכה חלופית) are marked | לוח בחינות (`HADPASAT_TOCHNIT_BEHINOT`) |
+
+Planned: exam notebooks (בנק בחינות), student requests (פניה למנהל סטודנטים, מעקב פניות).
+
 **Later / optional:** write actions (e.g. submitting an assignment).
 
 **Not available in Moodle:** syllabus, credit points and class schedule. These live in the
@@ -64,6 +72,20 @@ MOODLE_TOKEN_2027=<token>
 MOODLE_DEFAULT_YEAR=2026
 ```
 
+For the Yedion tools, also add your university username and password (the ones you use for
+Moodle and My RUNI):
+
+```
+RUNI_USERNAME=<username>
+RUNI_PASSWORD=<password>
+```
+
+The server logs in to My RUNI (`my.runi.ac.il`), follows its single sign-on (SAML) into Yedion
+and keeps that session; when it expires it logs in again once. If the university refuses the
+password, or asks for anything else (e.g. a second factor), the server stops trying until it is
+restarted, so a wrong password can't lock the account. Yedion, like Moodle, only answers
+Israeli IP addresses.
+
 Each academic year is a separate Moodle site (`<base>/<year>`) with its own token.
 Add a `MOODLE_TOKEN_<year>` line per year; no code changes needed.
 
@@ -85,7 +107,7 @@ Treat the token like a password. To revoke it, log out of the Moodle app or remo
 uv run pytest
 ```
 
-Runs against a fake Moodle (no network, no real tokens).
+Runs against a fake Moodle and a fake My RUNI / Yedion (no network, no real tokens or password).
 
 ## Connect to Claude Code
 
@@ -100,6 +122,8 @@ src/moodle_mcp/
   config.py       # reads .env, resolves site URL + token per year
   client.py       # calls the Moodle REST API
   assignments.py  # assignment listing + new-assignment detection
+  runi.py         # My RUNI single sign-on into Yedion, page fetches
+  exams.py        # Yedion exam schedule
   server.py       # FastMCP tool definitions
 docs/
   moodle_functions.md  # API functions available to the token

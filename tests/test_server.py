@@ -6,10 +6,14 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
 from moodle_mcp.server import mcp
+from tests.conftest import FIXTURES
+
+EXAM_FORM = (FIXTURES / "yedion_exam_form.html").read_text(encoding="utf-8")
+NO_EXAMS = (FIXTURES / "yedion_no_exams.html").read_text(encoding="utf-8")
 
 TOOLS = {"list_assignments", "get_assignment", "new_assignments", "list_courses",
          "get_course_staff", "get_course_contents", "get_grades", "staff_messages",
-         "upcoming_deadlines", "calendar_events", "search_moodle", "read_content"}
+         "upcoming_deadlines", "calendar_events", "search_moodle", "read_content", "exam_schedule"}
 
 
 def call_tool(name, args):
@@ -54,6 +58,12 @@ def test_network_error_message_reaches_claude(moodle):
         call_tool("list_courses", {})
 
 
+def test_yedion_error_message_reaches_claude(runi_site):
+    runi_site.accepted_password = "changed"
+    with pytest.raises(ToolError, match="My RUNI refused the username or password"):
+        call_tool("exam_schedule", {})
+
+
 # a bare list would reach the client as one content block per item instead of one JSON array
 
 
@@ -71,6 +81,13 @@ def test_list_tools_return_one_json_object(moodle, name, args, wsfunction, answe
     result = call_tool(name, args)
     assert len(result.content) == 1
     assert json.loads(result.content[0].text) == {key: []}
+
+
+def test_exam_schedule_returns_one_json_object(runi_site):
+    runi_site.pages = {"MenuCall": EXAM_FORM, "HADPASAT_TOCHNIT_BEHINOT": NO_EXAMS}
+    result = call_tool("exam_schedule", {})
+    assert len(result.content) == 1
+    assert json.loads(result.content[0].text) == {"exams": []}
 
 
 def test_staff_messages_returns_one_json_object(moodle):
