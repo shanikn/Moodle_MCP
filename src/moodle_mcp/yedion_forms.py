@@ -37,16 +37,18 @@ def hidden(page: str, name: str) -> str:
     return match.group(1)
 
 
-def grids(page: str) -> list[tuple[list[str], list[dict[str, str]]]]:
+def grids(page: str, raw: bool = False) -> list[tuple[list[str], list[dict[str, str]]]]:
     """Every result grid on the page (div.row / div.col inside a "Table container" card):
-    [(header, [{header: cell text}, ...]), ...]. Rows with a different cell count are skipped."""
+    [(header, [{header: cell text}, ...]), ...]. Rows with a different cell count are skipped.
+    raw=True keeps each cell's HTML instead of its text (e.g. to see whether it has a button)."""
     found = []
     for start in [m.start() for m in re.finditer(r'class="(?:PrintAsBox )?Table container', page)]:
         end = min([i for i in (page.find('class="card', start), page.find("</article>", start)) if i >= 0] or [len(page)])
-        rows = [[text(cell) for cell in re.findall(r'(?s)<div class="col[^"]*">(.*?)</div>', row)]
+        rows = [re.findall(r'(?s)<div class="col[^"]*">(.*?)</div>', row)
                 for row in re.split(r'<div class="row[^"]*">', page[start:end])[1:]]
         if rows:
-            header = rows[0]
+            header = [text(cell) for cell in rows[0]]
+            rows = rows if raw else [[text(cell) for cell in r] for r in rows]
             found.append((header, [dict(zip(header, r)) for r in rows[1:] if len(r) == len(header)]))
     return found
 

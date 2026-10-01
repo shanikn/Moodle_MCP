@@ -6,8 +6,8 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from moodle_mcp import (assignments, calendar, courses, deadlines, exam_bank, exams, grades, messages, reading,
-                        schedule, search)
+from moodle_mcp import (assignments, calendar, courses, deadlines, exam_bank, exams, grades, messages, notebooks,
+                        reading, schedule, search)
 from moodle_mcp.client import MoodleError
 from moodle_mcp.runi import RuniError
 
@@ -15,7 +15,8 @@ mcp = MCPServer(
     "moodle",
     instructions=("Access to a student's Reichman University Moodle. Each academic year is a separate site; "
     "tools default to the current year unless 'year' is given. Dates are local Israel time. "
-    "exam_schedule, class_schedule and search_exam_bank read the university's student info station (Yedion) "
+    "exam_schedule, class_schedule, search_exam_bank and exam_notebooks read the university's student info "
+    "station (Yedion) "
     "instead of Moodle."),
 )
 
@@ -294,6 +295,26 @@ def search_exam_bank(course: str, lecturer: str | None = None, year: int | None 
     year / semester: keep only that academic year / semester. language: the exam's language.
     """
     return {"exams": exam_bank.search_exam_bank(course, lecturer, year, semester, language)}
+
+
+@tool
+def exam_notebooks(year: int | None = None, semester: int | None = None) -> dict:
+    """The student's graded exams (מחברות בחינה) from Yedion (not Moodle): grade, appeal status
+    and which files exist. Two requests per call; files are not opened.
+
+    Returns {"exams": [...]}. Each exam: course, course_number, lecturer, type, moed (1, 2, ... or
+    "special" for מועד מיוחד), grade (number; null while not graded yet; a word such as "עבר" if
+    Yedion shows one), appeal_deadline ("YYYY-MM-DD" or null), appeal ("deadline passed",
+    "no grade yet", "confidential exam", "open" = an appeal can still be filed in Yedion; this
+    tool never files one), confidential (true for exams whose paper is not shown) and files: the
+    ones available among "exam_paper" (questionnaire / solution), "answer_key" (multiple-choice
+    key) and "notebook" (the student's scanned answer notebook).
+
+    year: academic year as in Moodle (2027 = Oct 2026 - Sep 2027, תשפ"ז); defaults to the
+    current one by today's date. semester: 1, 2, ... for one semester; omit (or 0) for the
+    whole year.
+    """
+    return {"exams": notebooks.exam_notebooks(year, semester)}
 
 def main() -> None:
     """Run over stdio (default, for the Claude desktop app / Claude Code), or over HTTP
