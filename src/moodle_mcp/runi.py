@@ -3,25 +3,35 @@
 # Login chain (F5 BIG-IP in front of My RUNI, SAML into Yedion):
 #   1. GET  my.runi.ac.il/myruni/app/index.html -> 302 to /my.policy (login form)
 #   2. POST /my.policy username, password, vhost=standard -> back to /myruni/app/index.html
-#   3. GET  yedion/login.aspx?Type=S -> auth.runi.ac.il SAML IdP -> F5 SSO hops -> HTML form
-#      with hidden SAMLResponse + RelayState
+#   3. GET  yedion/login.aspx?Type=S -> auth.runi.ac.il SAML IdP -> F5 SSO hops (on the My RUNI
+#      session) -> HTML form with hidden SAMLResponse + RelayState
 #   4. POST that form to yedion/login.aspx -> fireflyweb.aspx, logged in (cookie session)
+#
+# When Yedion's session expires, steps 3-4 are repeated on the still-valid My RUNI session (no
+# password). Only when that is gone too is the old F5 session logged out and the password sent
+# again, at most MAX_PASSWORD_LOGINS times an hour: F5 limits open sessions per user, and
+# repeated logins could lock the account.
 #
 # The password, the F5 cookies and the SAMLResponse identify the student: never log them,
 # never put them (or URLs, which carry SSO tokens) in error messages.
+import collections
 import html
 import logging
 import os
 import re
 import threading
+import time
 from urllib.parse import urlsplit
 
 import httpx
+
+from moodle_mcp.redact import mask
 
 # httpx logs every request URL at INFO, and SSO redirect URLs carry one-time tokens
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 MYRUNI_URL = "https://my.runi.ac.il/myruni/app/index.html"
+MYRUNI_LOGOUT_URL = "https://my.runi.ac.il/my.logout.php3"  # F5 APM's standard logout
 YEDION_URL = "https://yedion.runi.ac.il/yedion/"
 SSO_START_URL = YEDION_URL + "login.aspx?Type=S"
 FIREFLY_URL = YEDION_URL + "fireflyweb.aspx"
@@ -29,16 +39,23 @@ FIREFLY_URL = YEDION_URL + "fireflyweb.aspx"
 # requests: with them My RUNI answers every later request with a 502
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 LOGGED_IN_MARKER = 'id="ExitStudent"'  # the "יציאה" (log out) button on every logged-in page
+MAX_PASSWORD_LOGINS = 3                # per process, per PASSWORD_WINDOW seconds
+PASSWORD_WINDOW = 3600
 
 
 class RuniError(Exception):
-    """Login or page fetch failed. Messages are safe to show: no credentials, cookies or URLs."""
+    """Login or page fetch failed. The message is passed through redact.mask() as a safety net;
+    still never put credentials, cookies or URLs in it."""
+
+    def __init__(self, message: str):
+        super().__init__(mask(message))
 
 
 _lock = threading.Lock()
 _client: httpx.Client | None = None  # logged-in session; replaced (not cleared) on re-login
-_generation = 0                      # bumped on every login, so racing threads re-login once
-_login_failure: str | None = None    # set when the credentials were refused: never try again
+_generation = 0                      # bumped on every (re-)login, so racing threads re-login once
+_login_failure: str | None = None    # set when the university refused a login: never try again
+_password_logins: collections.deque[float] = collections.deque()  # time.monotonic() of each password POST
 
 
 def _where(response: httpx.Response) -> str:
@@ -63,9 +80,43 @@ def _saml_form(response: httpx.Response) -> tuple[str, dict]:
     return action_url, {k: html.unescape(v) for k, v in fields.items()}
 
 
+def _sso(client: httpx.Client) -> bool:
+    """Steps 3-4 on the client's My RUNI session. False if My RUNI sent us to its login page
+    (its session is gone); RuniError on anything else unexpected."""
+    response = client.get(SSO_START_URL)
+    response.raise_for_status()
+    if response.url.host == "my.runi.ac.il":
+        return False
+    action, fields = _saml_form(response)
+    response = client.post(action, data=fields)
+    response.raise_for_status()
+    if not _is_logged_in(response):
+        raise RuniError(f"Yedion did not accept the single sign-on (ended at {_where(response)}).")
+    return True
+
+
+def _logout(client: httpx.Client) -> None:
+    """Best effort: close the F5 session so it doesn't count against the per-user session limit."""
+    try:
+        client.get(MYRUNI_LOGOUT_URL)
+    except httpx.HTTPError:
+        pass
+    client.close()
+
+
+def _check_password_budget() -> None:
+    now = time.monotonic()
+    while _password_logins and now - _password_logins[0] >= PASSWORD_WINDOW:
+        _password_logins.popleft()
+    if len(_password_logins) >= MAX_PASSWORD_LOGINS:
+        wait = int(PASSWORD_WINDOW - (now - _password_logins[0])) // 60 + 1
+        raise RuniError(f"Yedion: already logged in to My RUNI with the password {MAX_PASSWORD_LOGINS} times "
+                        f"in the last hour; refusing another login for about {wait} minutes to protect the account.")
+
+
 def _login() -> httpx.Client:
-    """Run the whole login chain on a new client (no old cookies). Raises RuniError when the
-    university refuses the login or shows an unexpected page (e.g. MFA), httpx.HTTPError on
+    """The whole chain with the password, on a new client (no old cookies). Raises RuniError when
+    the university refuses the login or shows an unexpected page (e.g. MFA), httpx.HTTPError on
     network problems."""
     username = os.environ.get("RUNI_USERNAME")
     password = os.environ.get("RUNI_PASSWORD")
@@ -78,6 +129,7 @@ def _login() -> httpx.Client:
     if response.url.path != "/my.policy" or "name='password'" not in response.text:
         raise RuniError(f"My RUNI did not show its login form (got {_where(response)}).")
 
+    _password_logins.append(time.monotonic())
     response = client.post(str(response.url), data={"username": username, "password": password, "vhost": "standard"})
     response.raise_for_status()
     if "name='password'" in response.text:
@@ -88,30 +140,35 @@ def _login() -> httpx.Client:
         raise RuniError(f"My RUNI login stopped at an unexpected page ({_where(response)}), "
                         "possibly a second-factor (MFA) or access-blocked page.")
 
-    response = client.get(SSO_START_URL)
-    response.raise_for_status()
-    action, fields = _saml_form(response)
-    response = client.post(action, data=fields)
-    response.raise_for_status()
-    if not _is_logged_in(response):
-        raise RuniError(f"Yedion did not accept the single sign-on (ended at {_where(response)}).")
+    if not _sso(client):
+        raise RuniError("My RUNI accepted the password but sent the Yedion single sign-on back to its login "
+                        "page, possibly too many open sessions. Not retrying until the server restarts.")
     return client
 
 
 def _ensure_login(seen_generation: int | None) -> tuple[httpx.Client, int]:
-    """Return the current session, logging in if there is none or if the caller's session
-    (seen_generation) expired and no other thread has replaced it yet."""
+    """Return the current session. Logs in if there is none; if the caller's session
+    (seen_generation) expired and no other thread has renewed it yet, renews it: first through
+    the My RUNI session (no password), else logs that session out and logs in with the password."""
     global _client, _generation, _login_failure
     with _lock:
         if _login_failure:
             raise RuniError(_login_failure)
-        if _client is None or _generation == seen_generation:
-            try:
-                _client = _login()
-            except RuniError as exc:
-                _login_failure = str(exc)  # the university said no: don't ask again with the same password
-                raise
+        if _client is not None and _generation != seen_generation:
+            return _client, _generation  # still valid, or another thread already renewed it
+        if _client is not None and _sso(_client):
             _generation += 1
+            return _client, _generation
+        _check_password_budget()  # not remembered as a failure: it clears by itself
+        if _client is not None:
+            _logout(_client)
+            _client = None
+        try:
+            _client = _login()
+        except RuniError as exc:
+            _login_failure = str(exc)  # the university said no: don't ask again with the same password
+            raise
+        _generation += 1
         return _client, _generation
 
 

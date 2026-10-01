@@ -23,29 +23,68 @@ def test_logs_in_once_then_reuses_the_session(runi_site):
     assert [(p["PRGNAME"], p["ARGUMENTS"]) for p in runi_site.posts] == [("MenuCall", "-N,-N,-N6,-A"), ("Other", "-N1")]
 
 
-def test_expired_session_logs_in_again_once(runi_site):
+def test_expired_yedion_session_is_renewed_without_the_password(runi_site):
     runi_site.pages["MenuCall"] = '<b id="ExitStudent">page</b>'
     runi.fetch("MenuCall", "")
     runi_site.expire()
     assert "page" in runi.fetch("MenuCall", "")
-    assert runi_site.password_posts == 2
+    assert runi_site.events == ["password", "sso", "sso"]  # second SSO hop reuses the My RUNI session
 
 
-def test_parallel_calls_on_an_expired_session_log_in_only_once(runi_site):
+def test_when_my_runi_expired_too_the_old_session_is_logged_out_before_the_password(runi_site):
     runi_site.pages["MenuCall"] = '<b id="ExitStudent">page</b>'
     runi.fetch("MenuCall", "")
     runi_site.expire()
+    runi_site.expire_myruni()
+    assert "page" in runi.fetch("MenuCall", "")
+    assert runi_site.events == ["password", "sso", "sso-bounce", "logout", "password", "sso"]
+
+
+def test_parallel_calls_on_an_expired_session_renew_it_only_once(runi_site):
+    runi_site.pages["MenuCall"] = '<b id="ExitStudent">page</b>'
+    runi.fetch("MenuCall", "")
+    runi_site.expire()
+    runi_site.expire_myruni()
     with ThreadPoolExecutor(8) as pool:
         pages = list(pool.map(lambda _: runi.fetch("MenuCall", ""), range(16)))
     assert all("page" in p for p in pages)
-    assert runi_site.password_posts == 2
+    assert runi_site.events == ["password", "sso", "sso-bounce", "logout", "password", "sso"]
 
 
-def test_logged_out_again_right_after_login_is_an_error(runi_site):
+def test_logged_out_again_right_after_renewal_is_an_error(runi_site):
     runi_site.pages["MenuCall"] = "<b>no logout button: looks logged out</b>"
     with pytest.raises(runi.RuniError, match="logged us out again"):
         runi.fetch("MenuCall", "")
-    assert runi_site.password_posts == 2  # first login + exactly one re-login
+    assert runi_site.events == ["password", "sso", "sso"]  # login + exactly one renewal
+
+
+def test_password_logins_are_capped_per_hour(runi_site, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(runi.time, "monotonic", lambda: clock[0])
+    runi_site.pages["MenuCall"] = '<b id="ExitStudent">page</b>'
+    for _ in range(runi.MAX_PASSWORD_LOGINS):
+        runi_site.expire()
+        runi_site.expire_myruni()
+        runi.fetch("MenuCall", "")
+        clock[0] += 60
+    runi_site.expire()
+    runi_site.expire_myruni()
+    with pytest.raises(runi.RuniError, match="3 times in the last hour; refusing another login for about 58 minutes"):
+        runi.fetch("MenuCall", "")
+    assert runi_site.password_posts == 3
+
+    clock[0] += 3600  # the cap is not remembered as a failure: an hour later logins work again
+    assert "page" in runi.fetch("MenuCall", "")
+    assert runi_site.password_posts == 4
+
+
+def test_sso_bounce_right_after_password_is_not_retried(runi_site):
+    runi_site.sso_bounces = True  # e.g. F5's limit of open sessions per user
+    for _ in range(2):
+        with pytest.raises(runi.RuniError, match="possibly too many open sessions") as exc:
+            runi.fetch("MenuCall", "")
+        assert_no_secrets(str(exc.value))
+    assert runi_site.password_posts == 1
 
 
 def test_refused_password_is_never_retried(runi_site):

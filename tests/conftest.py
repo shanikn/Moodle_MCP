@@ -3,6 +3,7 @@
 config.py reads the environment when it is imported, so the env vars are set here,
 before any moodle_mcp module is imported, and the real .env is never loaded.
 """
+import collections
 import os
 from pathlib import Path
 from urllib.parse import parse_qsl
@@ -75,12 +76,15 @@ YEDION_HOME = '<button data-progname="MenuCall" data-arguments="-N,-N,-N97," id=
 
 
 class FakeRuni:
-    """My RUNI login (F5), the SAML hop and Yedion, with cookie sessions.
+    """My RUNI login (F5), the F5 single-sign-on hop, the SAML IdP and Yedion, with cookie sessions.
 
     runi_site.pages[PRGNAME] = html   what Yedion returns for a program
     runi_site.posts                   form data of every fireflyweb.aspx POST
+    runi_site.events                  "password", "logout", "sso" and "sso-bounce" in order
     runi_site.password_posts          how many times the password was sent
     runi_site.expire()                drop Yedion's sessions (as if they timed out)
+    runi_site.expire_myruni()         drop My RUNI's F5 sessions too
+    runi_site.sso_bounces = True      F5 sends the SSO hop to its login page (e.g. session limit)
     runi_site.after_password = "mfa"  answer the password with a second-factor page
     runi_site.accepted_password       change it to make the configured password wrong
     """
@@ -88,34 +92,64 @@ class FakeRuni:
     def __init__(self):
         self.pages: dict[str, str] = {}
         self.posts: list[dict] = []
-        self.password_posts = 0
+        self.events: list[str] = []
         self.after_password = "ok"
         self.accepted_password = os.environ["RUNI_PASSWORD"]
+        self.sso_bounces = False
         self.saml_action = "https://yedion.runi.ac.il/yedion/login.aspx"
         self.saml_posts: list[str] = []
-        self.sessions: set[str] = set()
+        self.sessions: set[str] = set()         # Yedion
+        self.myruni_sessions: set[str] = set()  # F5
+
+    @property
+    def password_posts(self):
+        return self.events.count("password")
 
     def expire(self):
         self.sessions.clear()
 
+    def expire_myruni(self):
+        self.myruni_sessions.clear()
+
+    @staticmethod
+    def _cookies(request):
+        return dict(c.strip().split("=", 1) for c in request.headers.get("cookie", "").split(";") if "=" in c)
+
     def _yedion_session(self, request):
-        cookies = dict(c.strip().split("=", 1) for c in request.headers.get("cookie", "").split(";") if "=" in c)
-        return cookies.get("Yedion.MySession") in self.sessions
+        return self._cookies(request).get("Yedion.MySession") in self.sessions
+
+    def _myruni_session(self, request):
+        return self._cookies(request).get("MRHSession") in self.myruni_sessions
 
     def myruni_app(self, request):
-        if "MRHSession=SESSION-SECRET" in request.headers.get("cookie", ""):
+        if self._myruni_session(request):
             return httpx.Response(200, text="<title>My RUNI</title>")
         return httpx.Response(302, headers={"Location": "/my.policy"})
 
     def policy_post(self, request):
-        self.password_posts += 1
+        self.events.append("password")
         form = dict(parse_qsl(request.content.decode()))
         if form.get("password") != self.accepted_password:
             return httpx.Response(200, text=LOGIN_PAGE)
         if self.after_password == "mfa":
             return httpx.Response(200, text=MFA_PAGE)
+        session = f"SESSION-SECRET-{len(self.events)}"
+        self.myruni_sessions.add(session)
         return httpx.Response(302, headers={"Location": "/myruni/app/index.html",
-                                            "Set-Cookie": "MRHSession=SESSION-SECRET; path=/"})
+                                            "Set-Cookie": f"MRHSession={session}; path=/"})
+
+    def logout(self, request):
+        self.events.append("logout")
+        self.myruni_sessions.discard(self._cookies(request).get("MRHSession"))
+        return httpx.Response(302, headers={"Location": "/my.policy"})
+
+    def sso_hop(self, request):
+        """F5 hands the SAML IdP the student's identity only on a live My RUNI session."""
+        if self._myruni_session(request) and not self.sso_bounces:
+            self.events.append("sso")
+            return httpx.Response(302, headers={"Location": "https://auth.runi.ac.il/saml/idp/profile/redirectorpost/sso?SAMLRequest=req"})
+        self.events.append("sso-bounce")
+        return httpx.Response(302, headers={"Location": "/my.policy"})
 
     def saml_idp(self, request):
         return httpx.Response(200, text=(
@@ -150,13 +184,16 @@ def runi_site(monkeypatch):
     monkeypatch.setattr(runi, "_client", None)
     monkeypatch.setattr(runi, "_generation", 0)
     monkeypatch.setattr(runi, "_login_failure", None)
+    monkeypatch.setattr(runi, "_password_logins", collections.deque())
     fake = FakeRuni()
     with respx.mock(assert_all_called=False) as router:
         router.get("https://my.runi.ac.il/myruni/app/index.html").mock(side_effect=fake.myruni_app)
         router.get("https://my.runi.ac.il/my.policy").mock(return_value=httpx.Response(200, text=LOGIN_PAGE))
         router.post("https://my.runi.ac.il/my.policy").mock(side_effect=fake.policy_post)
+        router.get("https://my.runi.ac.il/my.logout.php3").mock(side_effect=fake.logout)
         router.get(url__regex=r"^https://yedion\.runi\.ac\.il/yedion/login\.aspx\?Type=S$").mock(
-            return_value=httpx.Response(302, headers={"Location": "https://auth.runi.ac.il/saml/idp/profile/redirectorpost/sso?SAMLRequest=req"}))
+            return_value=httpx.Response(302, headers={"Location": "https://my.runi.ac.il/F5Networks-SSO-Req?SSO_ORIG_URI=x"}))
+        router.get(url__regex=r"^https://my\.runi\.ac\.il/F5Networks-SSO-Req").mock(side_effect=fake.sso_hop)
         router.get(url__regex=r"^https://auth\.runi\.ac\.il/saml/").mock(side_effect=fake.saml_idp)
         router.post("https://yedion.runi.ac.il/yedion/login.aspx").mock(side_effect=fake.yedion_login)
         router.get(url__regex=r"^https://yedion\.runi\.ac\.il/yedion/fireflyweb\.aspx").mock(side_effect=fake.firefly_get)
