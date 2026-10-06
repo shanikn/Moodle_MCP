@@ -370,7 +370,7 @@ def read_exam_bank_file(course: str, year: int, semester: int, moed: int, lectur
 
 def http_app(secret: str):
     """The ASGI app for hosting: /<secret>/mcp (the MCP endpoint), the OAuth addresses claude.ai
-    needs, and /<secret>/due, a plain GET for the iPhone Shortcut. Every other path is a 404."""
+    needs, and /<secret>/due and /<secret>/exams, plain GETs for iPhone Shortcuts. Every other path is a 404."""
     from starlette.concurrency import run_in_threadpool
     from starlette.requests import Request
     from starlette.responses import JSONResponse, PlainTextResponse
@@ -387,33 +387,50 @@ def http_app(secret: str):
         host="0.0.0.0",  # not localhost, so the SDK's localhost-only Host check stays off
     )
 
+    async def answer(request: Request, build, *args):
+        """Run a brief.py summary and return its text (or everything with ?format=json)."""
+        try:
+            # Moodle and Yedion are called with blocking httpx: keep them off the event loop
+            result = await run_in_threadpool(build, *args)
+        except (MoodleError, RuniError, ValueError) as exc:
+            return PlainTextResponse(f"Error: {exc}", status_code=502)
+        except httpx.HTTPError as exc:
+            return PlainTextResponse(f"Could not reach the university: {type(exc).__name__}", status_code=502)
+        if request.query_params.get("format") == "json":
+            return JSONResponse(result, headers={"Cache-Control": "no-store"})
+        return PlainTextResponse(result["text"], headers={"Cache-Control": "no-store"})
+
+    def days_param(request: Request, default: int | None) -> int | None:
+        raw = request.query_params.get("days")
+        if raw is None:
+            return default
+        days = int(raw)
+        if not 1 <= days <= 365:
+            raise ValueError
+        return days
+
     async def due(request: Request):
         """GET /<secret>/due?days=7&classes=1&overdue=0&format=text|json"""
         q = request.query_params
-        try:
-            days = int(q.get("days", "7"))
-            if not 1 <= days <= 60:
-                raise ValueError
-        except ValueError:
-            return PlainTextResponse("days must be a number from 1 to 60", status_code=400)
-        try:
-            # Moodle and Yedion are called with blocking httpx: keep them off the event loop
-            result = await run_in_threadpool(brief.whats_due, days, q.get("classes", "1") != "0",
-                                             q.get("overdue", "0") == "1")
-        except (MoodleError, ValueError) as exc:
-            return PlainTextResponse(f"Moodle error: {exc}", status_code=502)
-        except httpx.HTTPError as exc:
-            return PlainTextResponse(f"Could not reach Moodle: {type(exc).__name__}", status_code=502)
-        if q.get("format") == "json":
-            return JSONResponse(result, headers={"Cache-Control": "no-store"})
-        return PlainTextResponse(result["text"], headers={"Cache-Control": "no-store"})
+        return await answer(request, brief.whats_due, days_param(request, 7), q.get("classes", "1") != "0",
+                            q.get("overdue", "0") == "1")
+
+    async def exams_page(request: Request):
+        """GET /<secret>/exams?days=<n>&format=text|json (no days = every exam still ahead)"""
+        return await answer(request, brief.upcoming_exams, days_param(request, None))
+
+    pages = {f"/{secret}/due": due, f"/{secret}/exams": exams_page}
 
     async def app(scope, receive, send):
         if scope["type"] == "http" and oauth.handles(scope["path"]):
             await oauth(scope, receive, send)
             return
-        if scope["type"] == "http" and scope["method"] == "GET" and scope["path"] == f"/{secret}/due":
-            response = await due(Request(scope, receive))
+        if scope["type"] == "http" and scope["method"] == "GET" and scope["path"] in pages:
+            request = Request(scope, receive)
+            try:
+                response = await pages[scope["path"]](request)
+            except ValueError:
+                response = PlainTextResponse("days must be a number from 1 to 365", status_code=400)
             await response(scope, receive, send)
             return
         # This server never pushes messages, so answer the optional GET listening stream with

@@ -2,7 +2,7 @@ from datetime import datetime
 
 from starlette.testclient import TestClient
 
-from moodle_mcp import brief, schedule
+from moodle_mcp import brief, exams, schedule
 from moodle_mcp.runi import RuniError
 from moodle_mcp.server import http_app
 
@@ -108,3 +108,76 @@ def test_due_endpoint_is_only_reachable_with_the_secret(moodle):
     client = TestClient(http_app(SECRET))
     assert client.get("/due").status_code == 404
     assert client.get("/wrong-secret/due").status_code == 404
+
+
+# --- upcoming exams ---
+
+
+def exam(course, date, start="09:00", moed=1, room=None, registered=True, alternative=None):
+    return {"course": course, "course_number": "1", "lecturer": None, "semester": 1, "moed": moed, "type": "מבחן סופי",
+            "date": date, "start": start, "room": room, "registered": registered, "appeal_deadline": None,
+            "alternative_assessment": alternative}
+
+
+def test_upcoming_exams_text(monkeypatch):
+    monkeypatch.setattr(exams, "exam_schedule", lambda *a, **k: [
+        exam("Old exam", "2026-10-05"),                               # already passed
+        exam("Networks", "2026-10-06", room="C110"),                  # today counts
+        exam("Algorithms", "2026-10-07", moed=2, registered=False),
+        exam("Project course", "2026-10-08", alternative="פרויקט"),    # nothing to sit
+        exam("No date yet", None),
+        exam("Databases", "2027-01-31", start=None, moed="special"),
+    ])
+    result = brief.upcoming_exams(now=NOW)
+    assert result["text"] == ("Upcoming exams:\n"
+                              "• Tue 6/10 09:00 (today): Networks, moed 1, room C110\n"
+                              "• Wed 7/10 09:00 (tomorrow): Algorithms, moed 2, NOT REGISTERED\n"
+                              "• Sun 31/1 (in 117 days): Databases, special moed")
+    assert [e["days_left"] for e in result["exams"]] == [0, 1, 117]
+    assert [e["course"] for e in brief.upcoming_exams(days=7, now=NOW)["exams"]] == ["Networks", "Algorithms"]
+
+
+def test_no_upcoming_exams(monkeypatch):
+    monkeypatch.setattr(exams, "exam_schedule", lambda *a, **k: [exam("Old exam", "2026-10-05")])
+    assert brief.upcoming_exams(now=NOW)["text"] == "No upcoming exams."
+    assert brief.upcoming_exams(days=30, now=NOW)["text"] == "No upcoming exams in the next 30 days."
+
+
+def test_exams_endpoint(monkeypatch):
+    monkeypatch.setattr(exams, "exam_schedule", lambda *a, **k: [])
+    client = TestClient(http_app(SECRET))
+    answer = client.get(f"/{SECRET}/exams")
+    assert answer.status_code == 200 and answer.text == "No upcoming exams."
+    assert client.get(f"/{SECRET}/exams?format=json").json() == {"text": "No upcoming exams.", "exams": []}
+    assert client.get(f"/{SECRET}/exams?days=x").status_code == 400
+    assert client.get("/exams").status_code == 404
+
+
+def test_exams_endpoint_reports_yedion_errors(monkeypatch):
+    def broken(*args, **kwargs):
+        raise RuniError("My RUNI refused the username or password")
+    monkeypatch.setattr(exams, "exam_schedule", broken)
+    answer = TestClient(http_app(SECRET)).get(f"/{SECRET}/exams")
+    assert answer.status_code == 502 and "refused" in answer.text
+
+
+def test_upcoming_exams_include_last_academic_year(monkeypatch):
+    # 2026-10-06 is academic year 2027; a late moed of a 2026 course is listed under 2026
+    by_year = {2027: [exam("Algorithms", "2027-01-31")], 2026: [exam("Networks", "2026-10-20", moed=3)]}
+    asked = []
+
+    def schedule_for(year=None, semester=None):
+        asked.append(year)
+        return by_year[year]
+    monkeypatch.setattr(exams, "exam_schedule", schedule_for)
+    assert [e["course"] for e in brief.upcoming_exams(now=NOW)["exams"]] == ["Networks", "Algorithms"]
+    assert asked == [2027, 2026]
+
+
+def test_upcoming_exams_without_last_year(monkeypatch):
+    def schedule_for(year=None, semester=None):
+        if year == 2026:
+            raise ValueError("Yedion has no exam schedule for 2026.")
+        return [exam("Algorithms", "2027-01-31")]
+    monkeypatch.setattr(exams, "exam_schedule", schedule_for)
+    assert [e["course"] for e in brief.upcoming_exams(now=NOW)["exams"]] == ["Algorithms"]

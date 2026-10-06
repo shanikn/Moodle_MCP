@@ -119,6 +119,9 @@ summary: today's classes (Yedion) and what is due soon (Moodle). It is meant for
 | `overdue` | `0` | `1` also lists items past due in the last 30 days |
 | `format` | `text` | `json` returns `{"text", "deadlines", "classes"}` |
 
+`GET /<MCP_SECRET_PATH>/exams` lists the exams still ahead (Yedion's exam schedule, current and
+previous academic year) with a countdown; `days=<n>` limits how far ahead, `format=json` as above.
+
 Like the MCP endpoint, the secret path is the only protection: keep the URL private.
 
 ## Tests

@@ -1,10 +1,11 @@
-# "What's due?": a short plain-text summary for the iPhone Shortcut (served at /<secret>/due)
+# plain-text summaries for iPhone Shortcuts: "What's due?" (/<secret>/due) and upcoming exams (/<secret>/exams)
 from datetime import datetime
 
 import httpx
 
-from moodle_mcp import deadlines, schedule
+from moodle_mcp import deadlines, exams, schedule
 from moodle_mcp.runi import RuniError
+from moodle_mcp.yedion_forms import current_academic_year
 
 DATE_FORMAT = "%Y-%m-%d %H:%M"  # what formatting.fmt_date() produces
 
@@ -79,3 +80,43 @@ def whats_due(days: int = 7, classes: bool = True, include_overdue: bool = False
     else:
         lines.append(f"Nothing due in the next {days} days.")
     return {"text": "\n".join(lines), "deadlines": items, "classes": today}
+
+
+def countdown(days: int) -> str:
+    return "today" if days == 0 else "tomorrow" if days == 1 else f"in {days} days"
+
+
+def upcoming_exams(days: int | None = None, now: datetime | None = None) -> dict:
+    """{"text", "exams"}: exams from today on (within `days` days if given), soonest first, from
+    Yedion's exam schedule. Looks at the current academic year and the one before it: a late moed
+    of last year's course (e.g. in October) is still listed under last year. Older years cannot
+    hold a future exam. Courses with an alternative assessment (no exam to sit) and exams without
+    a date yet are left out."""
+    now = now or datetime.now()
+    this_year = current_academic_year(now.date())
+    listed = exams.exam_schedule(this_year)
+    try:
+        listed = exams.exam_schedule(this_year - 1) + listed
+    except ValueError:  # Yedion has no schedule for last year (e.g. a first-year student)
+        pass
+    found = []
+    for exam in listed:
+        if not exam["date"] or exam["alternative_assessment"]:
+            continue
+        left = (datetime.strptime(exam["date"], "%Y-%m-%d").date() - now.date()).days
+        if left >= 0 and (days is None or left <= days):
+            found.append({**exam, "days_left": left})
+
+    found.sort(key=lambda e: (e["date"], e["start"] or ""))
+    if not found:
+        return {"text": "No upcoming exams" + (f" in the next {days} days." if days else "."), "exams": []}
+    lines = ["Upcoming exams:"]
+    for exam in found:
+        day = datetime.strptime(exam["date"], "%Y-%m-%d")
+        moed = "special moed" if exam["moed"] == "special" else f"moed {exam['moed']}"
+        details = [moed] + ([f"room {exam['room']}"] if exam["room"] else [])
+        if exam["registered"] is False:
+            details.append("NOT REGISTERED")
+        lines.append(f"• {day.strftime('%a')} {day.day}/{day.month}" + (f" {exam['start']}" if exam["start"] else "")
+                     + f" ({countdown(exam['days_left'])}): {exam['course']}, {', '.join(details)}")
+    return {"text": "\n".join(lines), "exams": found}
