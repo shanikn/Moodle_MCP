@@ -368,6 +368,67 @@ def read_exam_bank_file(course: str, year: int, semester: int, moed: int, lectur
     exam, pdf = exam_bank.open_file(course, year, semester, moed, lecturer)
     return _pages(exam, pdf, first_page, last_page)
 
+def http_app(secret: str):
+    """The ASGI app for hosting: /<secret>/mcp (the MCP endpoint), the OAuth addresses claude.ai
+    needs, and /<secret>/due, a plain GET for the iPhone Shortcut. Every other path is a 404."""
+    from starlette.concurrency import run_in_threadpool
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse, PlainTextResponse
+
+    from moodle_mcp import brief
+    from moodle_mcp.oauth import OAuth
+
+    oauth = OAuth(secret)  # auto-approving sign-in that claude.ai requires; see oauth.py
+    path = f"/{secret}/mcp"
+    inner = mcp.streamable_http_app(
+        streamable_http_path=path,
+        stateless_http=True,  # no per-client session state, so restarts/sleeps don't break clients
+        json_response=True,
+        host="0.0.0.0",  # not localhost, so the SDK's localhost-only Host check stays off
+    )
+
+    async def due(request: Request):
+        """GET /<secret>/due?days=7&classes=1&overdue=0&format=text|json"""
+        q = request.query_params
+        try:
+            days = int(q.get("days", "7"))
+            if not 1 <= days <= 60:
+                raise ValueError
+        except ValueError:
+            return PlainTextResponse("days must be a number from 1 to 60", status_code=400)
+        try:
+            # Moodle and Yedion are called with blocking httpx: keep them off the event loop
+            result = await run_in_threadpool(brief.whats_due, days, q.get("classes", "1") != "0",
+                                             q.get("overdue", "0") == "1")
+        except (MoodleError, ValueError) as exc:
+            return PlainTextResponse(f"Moodle error: {exc}", status_code=502)
+        except httpx.HTTPError as exc:
+            return PlainTextResponse(f"Could not reach Moodle: {type(exc).__name__}", status_code=502)
+        if q.get("format") == "json":
+            return JSONResponse(result, headers={"Cache-Control": "no-store"})
+        return PlainTextResponse(result["text"], headers={"Cache-Control": "no-store"})
+
+    async def app(scope, receive, send):
+        if scope["type"] == "http" and oauth.handles(scope["path"]):
+            await oauth(scope, receive, send)
+            return
+        if scope["type"] == "http" and scope["method"] == "GET" and scope["path"] == f"/{secret}/due":
+            response = await due(Request(scope, receive))
+            await response(scope, receive, send)
+            return
+        # This server never pushes messages, so answer the optional GET listening stream with
+        # 405 right away (allowed by the MCP spec) instead of holding the stream open until it
+        # times out.
+        if scope["type"] == "http" and scope["method"] in ("GET", "HEAD") and scope["path"] == path:
+            await send({"type": "http.response.start", "status": 405,
+                        "headers": [(b"allow", b"POST, DELETE"), (b"content-length", b"0")]})
+            await send({"type": "http.response.body", "body": b""})
+            return
+        await inner(scope, receive, send)
+
+    return app
+
+
 def main() -> None:
     """Run over stdio (default, for the Claude desktop app / Claude Code), or over HTTP
     when MCP_TRANSPORT=http (for hosting, e.g. on Render).
@@ -387,32 +448,7 @@ def main() -> None:
 
     import uvicorn
 
-    from moodle_mcp.oauth import OAuth
-
-    oauth = OAuth(secret)  # auto-approving sign-in that claude.ai requires; see oauth.py
-    path = f"/{secret}/mcp"
-    inner = mcp.streamable_http_app(
-        streamable_http_path=path,
-        stateless_http=True,  # no per-client session state, so restarts/sleeps don't break clients
-        json_response=True,
-        host="0.0.0.0",  # not localhost, so the SDK's localhost-only Host check stays off
-    )
-
-    async def app(scope, receive, send):
-        if scope["type"] == "http" and oauth.handles(scope["path"]):
-            await oauth(scope, receive, send)
-            return
-        # This server never pushes messages, so answer the optional GET listening stream with
-        # 405 right away (allowed by the MCP spec) instead of holding the stream open until it
-        # times out.
-        if scope["type"] == "http" and scope["method"] in ("GET", "HEAD") and scope["path"] == path:
-            await send({"type": "http.response.start", "status": 405,
-                        "headers": [(b"allow", b"POST, DELETE"), (b"content-length", b"0")]})
-            await send({"type": "http.response.body", "body": b""})
-            return
-        await inner(scope, receive, send)
-
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8000")))  # Render/Cloud Run set PORT
+    uvicorn.run(http_app(secret), host="0.0.0.0", port=int(os.environ.get("PORT", "8000")))  # Render/Cloud Run set PORT
 
 
 if __name__ == "__main__":
