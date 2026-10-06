@@ -113,6 +113,11 @@ def test_due_endpoint_is_only_reachable_with_the_secret(moodle):
 # --- upcoming exams ---
 
 
+def only_this_year(listed):
+    """An exam_schedule that has `listed` for academic year 2027 and nothing for 2026."""
+    return lambda year=None, semester=None: listed if year == 2027 else []
+
+
 def exam(course, date, start="09:00", moed=1, room=None, registered=True, alternative=None):
     return {"course": course, "course_number": "1", "lecturer": None, "semester": 1, "moed": moed, "type": "מבחן סופי",
             "date": date, "start": start, "room": room, "registered": registered, "appeal_deadline": None,
@@ -120,14 +125,14 @@ def exam(course, date, start="09:00", moed=1, room=None, registered=True, altern
 
 
 def test_upcoming_exams_text(monkeypatch):
-    monkeypatch.setattr(exams, "exam_schedule", lambda *a, **k: [
+    monkeypatch.setattr(exams, "exam_schedule", only_this_year([
         exam("Old exam", "2026-10-05"),                               # already passed
         exam("Networks", "2026-10-06", room="C110"),                  # today counts
         exam("Algorithms", "2026-10-07", moed=2, registered=False),
         exam("Project course", "2026-10-08", alternative="פרויקט"),    # nothing to sit
         exam("No date yet", None),
         exam("Databases", "2027-01-31", start=None, moed="special"),
-    ])
+    ]))
     result = brief.upcoming_exams(now=NOW)
     assert result["text"] == ("Upcoming exams:\n"
                               "• Tue 6/10 09:00 (today): Networks, moed 1, room C110\n"
@@ -138,7 +143,7 @@ def test_upcoming_exams_text(monkeypatch):
 
 
 def test_no_upcoming_exams(monkeypatch):
-    monkeypatch.setattr(exams, "exam_schedule", lambda *a, **k: [exam("Old exam", "2026-10-05")])
+    monkeypatch.setattr(exams, "exam_schedule", only_this_year([exam("Old exam", "2026-10-05")]))
     assert brief.upcoming_exams(now=NOW)["text"] == "No upcoming exams."
     assert brief.upcoming_exams(days=30, now=NOW)["text"] == "No upcoming exams in the next 30 days."
 
