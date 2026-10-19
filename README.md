@@ -106,6 +106,24 @@ Add a `MOODLE_TOKEN_<year>` line per year; no code changes needed.
 Treat the token like a password. To revoke it, log out of the Moodle app or remove it under
 *Preferences → Security keys*.
 
+## "What's due?" endpoint (iPhone Shortcut)
+
+When hosted (`MCP_TRANSPORT=http`), `GET /<MCP_SECRET_PATH>/due` returns a short plain-text
+summary: today's classes (Yedion) and what is due soon (Moodle). It is meant for a Shortcut:
+*Get Contents of URL* → *Show Result* / *Speak Text*. Logic is in `brief.py`.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `days` | `7` | how far ahead to look (1–60) |
+| `classes` | `1` | `0` skips the timetable (faster: no Yedion login) |
+| `overdue` | `0` | `1` also lists items past due in the last 30 days |
+| `format` | `text` | `json` returns `{"text", "deadlines", "classes"}` |
+
+`GET /<MCP_SECRET_PATH>/exams` lists the exams still ahead (Yedion's exam schedule, current and
+previous academic year) with a countdown; `days=<n>` limits how far ahead, `format=json` as above.
+
+Like the MCP endpoint, the secret path is the only protection: keep the URL private.
+
 ## Tests
 
 ```
