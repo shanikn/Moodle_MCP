@@ -60,6 +60,109 @@ university's own systems and would need a separate data source.
 Every tool takes an optional `year` (defaults to `MOODLE_DEFAULT_YEAR`).
 All API functions available to a student token: [docs/moodle_functions.md](docs/moodle_functions.md).
 
+## Deploy your own
+
+For any Reichman student. You run your own copy with your own token and password; nothing is
+shared with anyone else.
+
+> [!WARNING]
+> **Never share your `.env` file or your connector URL** (`https://<host>/<secret>/mcp`), and
+> never commit `.env` or paste them into an issue, chat or screenshot. Your `.env` holds your
+> Moodle token and university password; the connector URL alone is enough for anyone to read
+> your Moodle, grades and exam notebooks, with no other login. If either leaks: revoke the
+> Moodle token (Moodle → *Preferences → Security keys*), change your university password, and
+> on Cloud Run set a new `MCP_SECRET_PATH`.
+
+### Option A: run it on your computer
+
+Works with Claude Desktop and Claude Code (not the claude.ai website or phone app; use option B
+for those). Your computer needs an Israeli IP address: Moodle and Yedion only answer Israeli IPs.
+
+1. Install [git](https://git-scm.com/downloads) and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+2. Clone the repo and install:
+   ```
+   git clone https://github.com/shanikn/Moodle_MCP.git
+   cd Moodle_MCP
+   uv sync
+   ```
+3. Copy `.env.example` to `.env` and fill it in: a Moodle token per year (steps in the file and
+   under [Getting a token](#getting-a-token-sso-login)), `MOODLE_DEFAULT_YEAR`, and optionally
+   `RUNI_USERNAME` / `RUNI_PASSWORD` for the Yedion tools (exams, timetable, exam bank).
+   Leave `MCP_TRANSPORT` and `MCP_SECRET_PATH` unset.
+4. Check that it starts: `uv run moodle-mcp` should wait silently for input (Ctrl+C to stop).
+   An error here usually means a missing `.env` value.
+5. Add it to Claude:
+   - **Claude Code:**
+     ```
+     claude mcp add moodle -- uv run --directory <full-path-to-Moodle_MCP> moodle-mcp
+     ```
+   - **Claude Desktop:** *Settings → Developer → Edit Config* opens `claude_desktop_config.json`.
+     Add (on Windows write the path with `/` or `\\`):
+     ```json
+     {
+       "mcpServers": {
+         "moodle": {
+           "command": "uv",
+           "args": ["run", "--directory", "<full-path-to-Moodle_MCP>", "moodle-mcp"]
+         }
+       }
+     }
+     ```
+     Restart Claude Desktop. If it can't find `uv`, use the full path from `where uv`
+     (Windows) or `which uv` (macOS) as `command`.
+6. Ask Claude e.g. *"What's due this week on Moodle?"*
+
+### Option B: host it on Google Cloud Run (use it from claude.ai and your phone)
+
+Runs the same server in Google's Tel Aviv region and adds it to claude.ai as a custom
+connector, so it also works in the Claude phone app. With min instances 0 it only runs while
+you use it; for one student this normally costs nothing or a few cents a month.
+
+1. **Fork** this repo on GitHub (*Fork* button, top right). Your fork contains no secrets; they
+   are set in Cloud Run only.
+2. **Get your values:** a Moodle token per year (see [Getting a token](#getting-a-token-sso-login)),
+   and generate your secret path (at least 32 characters):
+   ```
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+3. **Google Cloud:** sign in to the [Google Cloud console](https://console.cloud.google.com/),
+   create a project and link a billing account (required, even for the free tier).
+4. **Budget alert:** *Billing → Budgets & alerts → Create budget*, scope it to the project,
+   amount **$1**, keep the email alerts (50 / 90 / 100 %). This warns you; it doesn't stop the
+   service, so if you get an alert, look at what is running.
+5. **Create the service:** [Cloud Run](https://console.cloud.google.com/run) → *Deploy
+   container* / *Create service* → **Continuously deploy from a repository** → *Set up with
+   Cloud Build* (enable the APIs it asks for).
+   - Connect GitHub, choose your fork, branch `^main$`, build type **Dockerfile** (`/Dockerfile`).
+   - **Region:** `me-west1` (Tel Aviv). Required: Moodle and Yedion only answer Israeli IPs.
+   - **Authentication:** **Allow public access** (claude.ai must reach it; the secret path is
+     what keeps it private).
+   - **Scaling:** min instances **0**. Also set max instances to **1**: each instance logs in
+     to Yedion separately.
+   - **Containers → Variables & secrets:** add the same variables as in `.env.example`:
+     | Name | Value |
+     |---|---|
+     | `MOODLE_BASE_URL` | `https://moodle.runi.ac.il` |
+     | `MOODLE_TOKEN_<year>` | your token (one per year) |
+     | `MOODLE_DEFAULT_YEAR` | e.g. `2027` |
+     | `RUNI_USERNAME`, `RUNI_PASSWORD` | optional, for the Yedion tools |
+     | `MCP_TRANSPORT` | `http` |
+     | `MCP_SECRET_PATH` | the random string from step 2 |
+
+     Don't set `PORT`; Cloud Run sets it. For extra safety you can store the token and password
+     in Secret Manager and choose *Reference a secret* instead of plain values.
+   - *Create*. The first build takes a few minutes. Every push to your fork's `main` redeploys.
+6. **Check it:** copy the service URL (`https://<service>-<id>.me-west1.run.app`). Opening
+   `https://<host>/<MCP_SECRET_PATH>/due` in a browser should show what's due; any other path
+   returns 404.
+7. **Add to claude.ai:** *Settings → Connectors → Add custom connector*, name it e.g. Moodle,
+   URL `https://<host>/<MCP_SECRET_PATH>/mcp`. Click *Connect*: the sign-in step approves
+   itself. The connector then also appears in the Claude phone app.
+
+Notes: `new_assignments` keeps its "already seen" list on local disk, which Cloud Run resets
+when the instance restarts, so there it may report a fresh baseline. To change a value later,
+*Edit & deploy new revision* in Cloud Run.
+
 ## Setup
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.13+.
@@ -68,13 +171,13 @@ Requires [uv](https://docs.astral.sh/uv/) and Python 3.13+.
 uv sync
 ```
 
-Create `.env` in the project root (it is git-ignored):
+Copy [`.env.example`](.env.example) to `.env` in the project root (it is git-ignored) and fill it in:
 
 ```
 MOODLE_BASE_URL=https://moodle.runi.ac.il
 MOODLE_TOKEN_2026=<token>
 MOODLE_TOKEN_2027=<token>
-MOODLE_DEFAULT_YEAR=2026
+MOODLE_DEFAULT_YEAR=2027
 ```
 
 For the Yedion tools, also add your university username and password (the ones you use for
