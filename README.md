@@ -27,22 +27,19 @@ You need:
 - An AI app that supports MCP connectors. The steps use [Claude](https://claude.ai). Some apps
   need a paid plan to add your own (custom) connectors.
 
-Then pick one option:
+- A [GitHub](https://github.com) account (free).
+- A [Google Cloud](https://console.cloud.google.com) account with a credit card for billing.
+  Google requires the card, but normal use stays free (see below).
+- About 30 minutes.
 
-| | **A) On your own computer** | **B) In the cloud** |
-|---|---|---|
-| Works | only while your computer is on and the Claude app is open on it | anytime, also on claude.ai and the Claude phone app |
-| Needs | the Claude desktop app | a GitHub account and a Google Cloud account |
-| Credit card | not needed | needed: Google requires one for billing, but normal use stays free |
-| Time | about 15 minutes | about 30 minutes |
+The program runs in Google's cloud, so it works anytime, also on claude.ai and the Claude
+phone app.
 
-**Does it cost money?** Option A is completely free. Option B is free for normal personal use:
+**Does it cost money?** No, for normal personal use:
 it stays well within Google Cloud's monthly free tier (2 million requests plus free CPU and memory time), but Google still requires a credit card for billing.
 The only possible small cost: each deploy stores a copy of the program (a *container image*) in Artifact Registry, and old copies can go past the free storage.
 To prevent that, after your first deploy open [Artifact Registry](https://console.cloud.google.com/artifacts) → the `cloud-run-source-deploy` repository (region `me-west1`) → **Edit** → **Cleanup policies**: add a **Delete artifacts** policy (tag state *Any*), then a **Keep most recent versions** policy with count `3`, and click **Update**.
-Also set the $1 budget alert (Option B, steps 10–13).
-
-Both options start with **Step 1: get your Moodle key**.
+Also set the $1 budget alert ([Step 2](#set-up-google-cloud), steps 10–13).
 
 ## Step 1: get your Moodle key
 
@@ -86,7 +83,7 @@ Stuck in this step? Message me ([shanikn](https://github.com/shanikn)) and we'll
 
 ### Your settings
 
-Both options use the same settings:
+You will enter these settings in Step 2:
 
 | Setting | What to write |
 |---|---|
@@ -99,96 +96,7 @@ Both options use the same settings:
 Without `RUNI_USERNAME` and `RUNI_PASSWORD`, everything that comes from Moodle still works.
 Only the exam schedule, class timetable, exam bank and graded exam notebooks (from Yedion) need them.
 
-## Option A: run it on your own computer
-
-### Install
-
-1. Download and install the [Claude desktop app](https://claude.ai/download), then log in.
-2. Open a terminal (a window where you type commands):
-   - **Windows:** press Start, type `PowerShell`, and open **Windows PowerShell**.
-   - **Mac:** press Cmd+Space, type `Terminal`, and press Enter.
-3. Install **uv**, the tool that runs this program (it also installs Python for you). Paste the
-   line for your system into the terminal and press Enter:
-   - **Windows:**
-     ```
-     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-     ```
-   - **Mac:**
-     ```
-     curl -LsSf https://astral.sh/uv/install.sh | sh
-     ```
-4. Close the terminal window. Open a new one so it finds uv.
-
-### Download the program
-
-5. On this page on GitHub, click the green **Code** button, then **Download ZIP**.
-6. Unzip it into your **Documents** folder.
-7. Rename the unzipped folder from `Moodle_MCP-main` to `Moodle_MCP`.
-
-### Add your settings
-
-8. In the `Moodle_MCP` folder, open `.env.example` with a text editor (Notepad on Windows,
-   TextEdit on Mac).
-   On a Mac, if you don't see the file, press Cmd+Shift+. (period) in Finder to show hidden files.
-9. Fill in [your settings](#your-settings) after each `=`, with no spaces or quotes.
-10. Save it under the new name `.env` in the same folder.
-    - **Windows (Notepad):** File → Save As, set *Save as type* to **All files**, and name it
-      `.env`. Otherwise it becomes `.env.txt` and won't work.
-    - **Mac (TextEdit):** first choose Format → **Make Plain Text**, then save as `.env`. If asked,
-      choose **Use ".env"**.
-
-### Check that it starts
-
-11. In the terminal, go to the folder:
-    - **Windows:** `cd $HOME\Documents\Moodle_MCP`
-    - **Mac:** `cd ~/Documents/Moodle_MCP`
-12. Run `uv run moodle-mcp`. The first time, it downloads what it needs (a minute or two).
-13. If it then waits without showing an error, it works. Press **Ctrl+C** to stop it.
-    If you see an error, check your `.env` file, especially the key and the year.
-
-### Connect it to Claude
-
-14. In the Claude desktop app, open **Settings → Developer → Edit Config**. This opens a file
-    called `claude_desktop_config.json`.
-15. Replace its content with the text below. Change `<you>` to your user name on the computer
-    (the name in the path of your Documents folder):
-    - **Windows:**
-      ```json
-      {
-        "mcpServers": {
-          "moodle": {
-            "command": "uv",
-            "args": ["run", "--directory", "C:/Users/<you>/Documents/Moodle_MCP", "moodle-mcp"]
-          }
-        }
-      }
-      ```
-    - **Mac:**
-      ```json
-      {
-        "mcpServers": {
-          "moodle": {
-            "command": "uv",
-            "args": ["run", "--directory", "/Users/<you>/Documents/Moodle_MCP", "moodle-mcp"]
-          }
-        }
-      }
-      ```
-    If the file already had other entries under `mcpServers`, add the `"moodle"` block next to
-    them instead of replacing everything.
-16. Save the file.
-17. Quit Claude completely and open it again. On Windows, right-click the Claude icon near the
-    clock and choose **Quit**. On a Mac, press Cmd+Q.
-18. In a new chat, ask *"What's due this week on Moodle?"*
-
-If Claude says it can't start the `moodle` server, the app can't find uv. In the terminal, run
-`where.exe uv` (Windows) or `which uv` (Mac), and put the path it prints in place of `"uv"` after
-`"command"` (on Windows, write it with `/` instead of `\`).
-
-Using Claude Code instead? Run
-`claude mcp add moodle -- uv run --directory <path-to-Moodle_MCP> moodle-mcp`.
-
-## Option B: run it in the cloud
+## Step 2: put it in the cloud
 
 The program runs on Google Cloud Run, in Google's Tel Aviv data center, and you add it to
 claude.ai as a *connector*. It only runs while Claude is using it, so normal use stays inside
@@ -287,15 +195,16 @@ To change a setting later (for example a new year's key), open your service in C
 
 This is a standard MCP server, so other apps that support MCP can use it too:
 
-- **Apps on the web or phone (remote connectors):** use the same connector URL as in Option B,
+- **Apps on the web or phone (remote connectors):** use the same connector URL as in Step 2,
   `https://<your service URL>/<secret code>/mcp`.
-- **Apps on your computer (local MCP servers):** run the same command as in the Claude Desktop
-  config in Option A: `uv run --directory <path-to-Moodle_MCP> moodle-mcp`. Most apps accept the
-  same `"command"` / `"args"` JSON.
+- **Apps on your computer (local MCP servers):** follow [docs/local-setup.md](docs/local-setup.md)
+  and run the same command as in its Claude Desktop config:
+  `uv run --directory <path-to-Moodle_MCP> moodle-mcp`. Most apps accept the same
+  `"command"` / `"args"` JSON.
 
 **Example: ChatGPT** (not tested yet - tell me if it works). Needs a paid ChatGPT plan.
 
-1. Do Option B first.
+1. Do Steps 1 and 2 first.
 2. Go to [chatgpt.com/plugins](https://chatgpt.com/plugins) and click **Add**.
 3. Choose to create a custom MCP server.
 4. Enter the connector URL `https://<your service URL>/<secret code>/mcp`.
@@ -308,9 +217,11 @@ Each academic year is a separate Moodle site with its own key. When the new year
 2. Add a new setting `MOODLE_TOKEN_<new year>` with the new key. You can keep the old one to
    still read last year's courses.
 3. Change `MOODLE_DEFAULT_YEAR` to the new year.
-4. Restart Claude (option A) or deploy a new revision (option B).
+4. Save the changes in Cloud Run with **Edit & deploy new revision** (see [Getting updates](#getting-updates)).
 
 ## Advanced / good to know
+
+Prefer running it on your own computer? See [docs/local-setup.md](docs/local-setup.md).
 
 ### The budget alert doesn't stop spending
 
@@ -319,7 +230,7 @@ the project in Google Cloud and check what is running.
 
 ### Store your key and password in Secret Manager
 
-In option B, instead of typing `MOODLE_TOKEN_<year>` and `RUNI_PASSWORD` as plain variables, you
+Instead of typing `MOODLE_TOKEN_<year>` and `RUNI_PASSWORD` as plain variables, you
 can save them in Google Cloud **Secret Manager** and, under **Variables & Secrets**, choose
 **Reference a secret**. Then they aren't shown in the service settings.
 
@@ -336,7 +247,7 @@ If someone else might have your `.env` file, Moodle key, password or connector l
 1. In Moodle, open your profile menu → **Preferences** → **Security keys** and reset the
    *Moodle mobile web service* key. Then get a new key with [Step 1](#step-1-get-your-moodle-key).
 2. Change your university password.
-3. Option B: make a new secret code, update `MCP_SECRET_PATH` in Cloud Run, and update the
+3. Make a new secret code, update `MCP_SECRET_PATH` in Cloud Run, and update the
    connector link in claude.ai.
 
 ## Technical details
