@@ -1,6 +1,6 @@
 # Moodle MCP
 
-Lets Claude read your Reichman University Moodle and Yedion, so you can ask things like:
+Lets your AI assistant read your Reichman University Moodle and Yedion, so you can ask things like:
 
 - *"What's due this week?"*
 - *"Did the lecturer post anything new in Data Structures?"*
@@ -12,6 +12,9 @@ Lets Claude read your Reichman University Moodle and Yedion, so you can ask thin
 > (`moodle.runi.ac.il`) and My RUNI / Yedion, and logs in with your own student account.
 > It only reads. It never submits, changes or deletes anything.
 
+Works with any AI app that supports MCP connectors (for example Claude, ChatGPT or Cursor).
+The steps below use Claude, the tested example; for other apps see [Other AI apps](#other-ai-apps).
+
 > [!WARNING]
 > **Never share your connector URL or your `.env` file, and never upload `.env` to GitHub.** Anyone who has either one can read your Moodle, grades and exams.
 
@@ -21,7 +24,8 @@ You need:
 
 - A Reichman student account (the one you use for Moodle and My RUNI).
 - An Israeli internet connection. Moodle and Yedion block connections from abroad.
-- A [Claude](https://claude.ai) account.
+- An AI app that supports MCP connectors. The steps use [Claude](https://claude.ai). Some apps
+  need a paid plan to add your own (custom) connectors.
 
 Then pick one option:
 
@@ -278,6 +282,23 @@ When this project gets new features, open your fork on GitHub and click **Sync f
 To change a setting later (for example a new year's key), open your service in Cloud Run, click
 **Edit & deploy new revision**, change the variable under **Variables & Secrets**, and click
 **Deploy**.
+
+## Other AI apps
+
+This is a standard MCP server, so other apps that support MCP can use it too:
+
+- **Apps on the web or phone (remote connectors):** use the same connector URL as in Option B,
+  `https://<your service URL>/<secret code>/mcp`.
+- **Apps on your computer (local MCP servers):** run the same command as in the Claude Desktop
+  config in Option A: `uv run --directory <path-to-Moodle_MCP> moodle-mcp`. Most apps accept the
+  same `"command"` / `"args"` JSON.
+
+**Example: ChatGPT** (not tested yet - tell me if it works). Needs a paid ChatGPT plan.
+
+1. Do Option B first.
+2. Go to [chatgpt.com/plugins](https://chatgpt.com/plugins) and click **Add**.
+3. Choose to create a custom MCP server.
+4. Enter the connector URL `https://<your service URL>/<secret code>/mcp`.
 
 ## A new academic year
 
