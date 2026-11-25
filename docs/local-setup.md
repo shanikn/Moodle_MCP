@@ -2,10 +2,10 @@
 
 Instead of the cloud setup in the [README](../README.md), you can run the program on your own
 computer. No credit card is needed, but it only works while your computer is on and the Claude
-desktop app is open on it (not on claude.ai or the phone app). Takes about 15 minutes.
+desktop app is open on it (not on claude.ai or the phone app). It needs an Israeli internet connection. About 15 minutes.
 
-Before you start, do [Step 1: get your Moodle key](../README.md#step-1-get-your-moodle-key) and
-have [your settings](../README.md#your-settings) ready. Leave out `MCP_TRANSPORT` and
+Before you start, get [your Moodle key](moodle-key.md) and
+have [your settings](cloud-run.md#variables) ready. Leave out `MCP_TRANSPORT` and
 `MCP_SECRET_PATH`: they are only for the cloud.
 
 ## Install
@@ -37,7 +37,7 @@ have [your settings](../README.md#your-settings) ready. Leave out `MCP_TRANSPORT
 8. In the `Moodle_MCP` folder, open `.env.example` with a text editor (Notepad on Windows,
    TextEdit on Mac).
    On a Mac, if you don't see the file, press Cmd+Shift+. (period) in Finder to show hidden files.
-9. Fill in [your settings](../README.md#your-settings) after each `=`, with no spaces or quotes.
+9. Fill in [your settings](cloud-run.md#variables) after each `=`, with no spaces or quotes.
 10. Save it under the new name `.env` in the same folder.
     - **Windows (Notepad):** File → Save As, set *Save as type* to **All files**, and name it
       `.env`. Otherwise it becomes `.env.txt` and won't work.
@@ -98,6 +98,6 @@ Using Claude Code instead? Run
 ## A new academic year
 
 Add the new `MOODLE_TOKEN_<year>` line to `.env`, change `MOODLE_DEFAULT_YEAR`, then quit and
-reopen Claude. See [A new academic year](../README.md#a-new-academic-year).
+reopen Claude. For the cloud version see [cloud-run.md](cloud-run.md#change-a-setting).
 
 Keep your `.env` file private: never send it to anyone or upload it to GitHub.
