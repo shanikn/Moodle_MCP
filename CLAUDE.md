@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A read-only MCP server exposing a student's Reichman University Moodle (`moodle.runi.ac.il`) to Claude, via the same web-service API the Moodle mobile app uses (student token, no admin rights). `exam_schedule`, `class_schedule`, `search_exam_bank`, `exam_notebooks`, `read_exam_notebook_file` and `read_exam_bank_file` instead scrape Yedion (`yedion.runi.ac.il`, the student info station), logged in with the student's university password through My RUNI single sign-on. README.md holds the planned tool roadmap (phases 1–4) and token setup; `docs/moodle_functions.md` lists every API function the student token can call — check it before assuming a `wsfunction` exists.
+A read-only MCP server exposing a student's Reichman University Moodle (`moodle.runi.ac.il`) to Claude, via the same web-service API the Moodle mobile app uses (student token, no admin rights). `exam_schedule`, `class_schedule`, `search_exam_bank`, `exam_notebooks`, `read_exam_notebook_file` and `read_exam_bank_file` instead scrape Yedion (`yedion.runi.ac.il`, the student info station), logged in with the student's university password through My RUNI single sign-on. README.md is the step-by-step setup guide for students; `docs/technical.md` holds the tool list (phases 1–4), env and token details; `docs/moodle_functions.md` lists every API function the student token can call — check it before assuming a `wsfunction` exists.
 
 ## Commands
 

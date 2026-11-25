@@ -1,262 +1,326 @@
 # Moodle MCP
 
-An MCP server that gives Claude read access to a student's Moodle account
-(Reichman University, `moodle.runi.ac.il`), using the same web-service API as the Moodle mobile app.
-No admin rights needed.
+Lets Claude read your Reichman University Moodle and Yedion, so you can ask things like:
 
-> **Status:** all planned read-only tools (phases 1–4) work and are covered by tests.
+- *"What's due this week?"*
+- *"Did the lecturer post anything new in Data Structures?"*
+- *"When and where are my exams?"*
+- *"Summarize this week's lecture slides."*
+- *"Find past exams for Linear Algebra."*
 
-## Tools
-
-**Phase 1 – Assignments**
-
-| Tool | Description | Moodle API |
-|---|---|---|
-| ✅ `list_assignments` | Assignments across your courses, with due dates. `status`: `all` (default) / `pending` (not submitted, incl. drafts) / `submitted`; `include_overdue` (default off) | `mod_assign_get_assignments` + `mod_assign_get_submission_status` per assignment |
-| ✅ `new_assignments` | Assignments added (not in last snapshot) or updated today (`timemodified`) | `mod_assign_get_assignments` + local snapshot |
-| ✅ `get_assignment` | One assignment's details, submission status and feedback | `mod_assign_get_submission_status` |
-
-**Phase 2 – Courses**
-
-| Tool | Description | Moodle API |
-|---|---|---|
-| ✅ `list_courses` | Your courses, with semester and course number | `core_enrol_get_users_courses`, `core_course_get_courses_by_field` |
-| ✅ `get_course_staff` | Lecturer (`editingteacher`) and TAs (`tutor`, `instruction_assistant`) | `core_enrol_get_enrolled_users` |
-| ✅ `get_course_contents` | Sections and activities in a course | `core_course_get_contents` |
-| ✅ `get_grades` | With a course: each grade item, grade and weight. Without: overall grade per course | `gradereport_user_get_grade_items` (needs `userid`), `gradereport_overview_get_course_grades` |
-
-**Phase 3 – Communication**
-
-| Tool | Description | Moodle API |
-|---|---|---|
-| ✅ `staff_messages` | Announcements and Q&A answers by lecturers/TAs, and direct messages, from the last N days | `mod_forum_*`, `core_enrol_get_enrolled_users`, `core_message_get_conversation_messages` |
-
-**Phase 4 – Reading & schedule**
-
-| Tool | Description | Moodle API |
-|---|---|---|
-| ✅ `upcoming_deadlines` | Assignments and quizzes due soon that still need action | `core_calendar_get_action_events_by_timesort` |
-| ✅ `read_content` | Text of course files (PDF, PowerPoint, Word, Jupyter, code, HTML) or Page activities, in 30k-character parts | `mod_page_get_pages_by_courses` + file download |
-| ✅ `search_moodle` | Moodle global search across your courses | `core_search_get_results` |
-
-**Yedion – the university's student info station** (`yedion.runi.ac.il`, not Moodle)
-
-| Tool | Description | Yedion page |
-|---|---|---|
-| ✅ `exam_schedule` | Exams for a year (default: the current academic year by date, Oct–Sep) / semester: course, moed, type, date, start time, room, registration status, appeal deadline; courses with an alternative assessment (הערכה חלופית) are marked | לוח בחינות (`HADPASAT_TOCHNIT_BEHINOT`) |
-| ✅ `class_schedule` | Your timetable for a year / semester (default: current academic year, whole year): each lecture / tutorial with day, start and end time, room, lecturer, group, credits, weekly hours and Yedion's notes; total credits | רשימת מערכת שעות (`StudentQueryExecution`, QueryCode 3) |
-| ✅ `search_exam_bank` | Past exams of a course (by number or name), optionally by lecturer, year, semester and language: year, semester, moed, lecturer, school. Lists exams, doesn't download them | בנק בחינות (`ExamBank`) |
-| ✅ `exam_notebooks` | Your graded exams for a year / semester: grade, appeal deadline and status, and which files exist (exam paper / solution, multiple-choice key, your scanned notebook). Doesn't open files or file appeals | מחברות בחינה (`StudentQueryExecution`, QueryCode 482) |
-| ✅ `read_exam_notebook_file` | Open a graded exam's file (exam paper / solution, answer key, your scanned notebook): pages as images, max 10 per call, plus any text layer. Confidential exams are reported, never opened | `NoteBooks_Open_Do` |
-| ✅ `read_exam_bank_file` | Open a past exam from the exam bank: pages as images, max 10 per call | `ExamBank` (download) |
-
-Planned: exam notebooks (בנק בחינות), student requests (פניה למנהל סטודנטים, מעקב פניות).
-
-**Later / optional:** write actions (e.g. submitting an assignment).
-
-**Not available in Moodle:** syllabus, credit points and class schedule (the last two come from Yedion via `class_schedule`). These live in the
-university's own systems and would need a separate data source.
-
-Every tool takes an optional `year` (defaults to `MOODLE_DEFAULT_YEAR`).
-All API functions available to a student token: [docs/moodle_functions.md](docs/moodle_functions.md).
-
-## Deploy your own
-
-For any Reichman student. You run your own copy with your own token and password; nothing is
-shared with anyone else.
+> **For Reichman University (RUNI) students only.** It uses RUNI's Moodle
+> (`moodle.runi.ac.il`) and My RUNI / Yedion, and logs in with your own student account.
+> It only reads. It never submits, changes or deletes anything.
 
 > [!WARNING]
-> **Never share your `.env` file or your connector URL** (`https://<host>/<secret>/mcp`), and
-> never commit `.env` or paste them into an issue, chat or screenshot. Your `.env` holds your
-> Moodle token and university password; the connector URL alone is enough for anyone to read
-> your Moodle, grades and exam notebooks, with no other login. If either leaks: revoke the
-> Moodle token (Moodle → *Preferences → Security keys*), change your university password, and
-> on Cloud Run set a new `MCP_SECRET_PATH`.
+> **Never share your connector URL or your `.env` file, and never upload `.env` to GitHub.** Anyone who has either one can read your Moodle, grades and exams.
 
-### Option A: run it on your computer
+## Before you start
 
-Works with Claude Desktop and Claude Code (not the claude.ai website or phone app; use option B
-for those). Your computer needs an Israeli IP address: Moodle and Yedion only answer Israeli IPs.
+You need:
 
-1. Install [git](https://git-scm.com/downloads) and [uv](https://docs.astral.sh/uv/getting-started/installation/).
-2. Clone the repo and install:
-   ```
-   git clone https://github.com/shanikn/Moodle_MCP.git
-   cd Moodle_MCP
-   uv sync
-   ```
-3. Copy `.env.example` to `.env` and fill it in: a Moodle token per year (steps in the file and
-   under [Getting a token](#getting-a-token-sso-login)), `MOODLE_DEFAULT_YEAR`, and optionally
-   `RUNI_USERNAME` / `RUNI_PASSWORD` for the Yedion tools (exams, timetable, exam bank).
-   Leave `MCP_TRANSPORT` and `MCP_SECRET_PATH` unset.
-4. Check that it starts: `uv run moodle-mcp` should wait silently for input (Ctrl+C to stop).
-   An error here usually means a missing `.env` value.
-5. Add it to Claude:
-   - **Claude Code:**
-     ```
-     claude mcp add moodle -- uv run --directory <full-path-to-Moodle_MCP> moodle-mcp
-     ```
-   - **Claude Desktop:** *Settings → Developer → Edit Config* opens `claude_desktop_config.json`.
-     Add (on Windows write the path with `/` or `\\`):
-     ```json
-     {
-       "mcpServers": {
-         "moodle": {
-           "command": "uv",
-           "args": ["run", "--directory", "<full-path-to-Moodle_MCP>", "moodle-mcp"]
-         }
-       }
-     }
-     ```
-     Restart Claude Desktop. If it can't find `uv`, use the full path from `where uv`
-     (Windows) or `which uv` (macOS) as `command`.
-6. Ask Claude e.g. *"What's due this week on Moodle?"*
+- A Reichman student account (the one you use for Moodle and My RUNI).
+- An Israeli internet connection. Moodle and Yedion block connections from abroad.
+- A [Claude](https://claude.ai) account.
 
-### Option B: host it on Google Cloud Run (use it from claude.ai and your phone)
+Then pick one option:
 
-Runs the same server in Google's Tel Aviv region and adds it to claude.ai as a custom
-connector, so it also works in the Claude phone app. With min instances 0 it only runs while
-you use it; for one student this normally costs nothing or a few cents a month.
-
-1. **Fork** this repo on GitHub (*Fork* button, top right). Your fork contains no secrets; they
-   are set in Cloud Run only.
-2. **Get your values:** a Moodle token per year (see [Getting a token](#getting-a-token-sso-login)),
-   and generate your secret path (at least 32 characters):
-   ```
-   python -c "import secrets; print(secrets.token_urlsafe(32))"
-   ```
-3. **Google Cloud:** sign in to the [Google Cloud console](https://console.cloud.google.com/),
-   create a project and link a billing account (required, even for the free tier).
-4. **Budget alert:** *Billing → Budgets & alerts → Create budget*, scope it to the project,
-   amount **$1**, keep the email alerts (50 / 90 / 100 %). This warns you; it doesn't stop the
-   service, so if you get an alert, look at what is running.
-5. **Create the service:** [Cloud Run](https://console.cloud.google.com/run) → *Deploy
-   container* / *Create service* → **Continuously deploy from a repository** → *Set up with
-   Cloud Build* (enable the APIs it asks for).
-   - Connect GitHub, choose your fork, branch `^main$`, build type **Dockerfile** (`/Dockerfile`).
-   - **Region:** `me-west1` (Tel Aviv). Required: Moodle and Yedion only answer Israeli IPs.
-   - **Authentication:** **Allow public access** (claude.ai must reach it; the secret path is
-     what keeps it private).
-   - **Scaling:** min instances **0**. Also set max instances to **1**: each instance logs in
-     to Yedion separately.
-   - **Containers → Variables & secrets:** add the same variables as in `.env.example`:
-     | Name | Value |
-     |---|---|
-     | `MOODLE_BASE_URL` | `https://moodle.runi.ac.il` |
-     | `MOODLE_TOKEN_<year>` | your token (one per year) |
-     | `MOODLE_DEFAULT_YEAR` | e.g. `2027` |
-     | `RUNI_USERNAME`, `RUNI_PASSWORD` | optional, for the Yedion tools |
-     | `MCP_TRANSPORT` | `http` |
-     | `MCP_SECRET_PATH` | the random string from step 2 |
-
-     Don't set `PORT`; Cloud Run sets it. For extra safety you can store the token and password
-     in Secret Manager and choose *Reference a secret* instead of plain values.
-   - *Create*. The first build takes a few minutes. Every push to your fork's `main` redeploys.
-6. **Check it:** copy the service URL (`https://<service>-<id>.me-west1.run.app`). Opening
-   `https://<host>/<MCP_SECRET_PATH>/due` in a browser should show what's due; any other path
-   returns 404.
-7. **Add to claude.ai:** *Settings → Connectors → Add custom connector*, name it e.g. Moodle,
-   URL `https://<host>/<MCP_SECRET_PATH>/mcp`. Click *Connect*: the sign-in step approves
-   itself. The connector then also appears in the Claude phone app.
-
-Notes: `new_assignments` keeps its "already seen" list on local disk, which Cloud Run resets
-when the instance restarts, so there it may report a fresh baseline. To change a value later,
-*Edit & deploy new revision* in Cloud Run.
-
-## Setup
-
-Requires [uv](https://docs.astral.sh/uv/) and Python 3.13+.
-
-```
-uv sync
-```
-
-Copy [`.env.example`](.env.example) to `.env` in the project root (it is git-ignored) and fill it in:
-
-```
-MOODLE_BASE_URL=https://moodle.runi.ac.il
-MOODLE_TOKEN_2026=<token>
-MOODLE_TOKEN_2027=<token>
-MOODLE_DEFAULT_YEAR=2027
-```
-
-For the Yedion tools, also add your university username and password (the ones you use for
-Moodle and My RUNI):
-
-```
-RUNI_USERNAME=<username>
-RUNI_PASSWORD=<password>
-```
-
-The server logs in to My RUNI (`my.runi.ac.il`), follows its single sign-on (SAML) into Yedion
-and keeps that session; when it expires it logs in again once. If the university refuses the
-password, or asks for anything else (e.g. a second factor), the server stops trying until it is
-restarted, so a wrong password can't lock the account. Yedion, like Moodle, only answers
-Israeli IP addresses.
-
-Each academic year is a separate Moodle site (`<base>/<year>`) with its own token.
-Add a `MOODLE_TOKEN_<year>` line per year; no code changes needed.
-
-### Getting a token (SSO login)
-
-1. Log in to `https://moodle.runi.ac.il/<year>` in your browser.
-2. Open DevTools (F12) → Network → enable *Preserve log*.
-3. Visit:
-   `https://moodle.runi.ac.il/<year>/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=12345&urlscheme=moodlemobile`
-4. The page redirects to `moodlemobile://token=<base64>`. Base64-decode it; the result is
-   `<signature>:::<token>`. Use the part after `:::`.
-
-Treat the token like a password. To revoke it, log out of the Moodle app or remove it under
-*Preferences → Security keys*.
-
-## "What's due?" endpoint (iPhone Shortcut)
-
-When hosted (`MCP_TRANSPORT=http`), `GET /<MCP_SECRET_PATH>/due` returns a short plain-text
-summary: today's classes (Yedion) and what is due soon (Moodle). It is meant for a Shortcut:
-*Get Contents of URL* → *Show Result* / *Speak Text*. Logic is in `brief.py`.
-
-| Parameter | Default | Meaning |
+| | **A) On your own computer** | **B) In the cloud** |
 |---|---|---|
-| `days` | `7` | how far ahead to look (1–60) |
-| `classes` | `1` | `0` skips the timetable (faster: no Yedion login) |
-| `overdue` | `0` | `1` also lists items past due in the last 30 days |
-| `format` | `text` | `json` returns `{"text", "deadlines", "classes"}` |
+| Works | only while your computer is on and the Claude app is open on it | anytime, also on claude.ai and the Claude phone app |
+| Needs | the Claude desktop app | a GitHub account and a Google Cloud account |
+| Credit card | not needed | needed: Google requires one for billing, but normal use stays free |
+| Time | about 15 minutes | about 30 minutes |
 
-`GET /<MCP_SECRET_PATH>/exams` lists the exams still ahead (Yedion's exam schedule, current and
-previous academic year) with a countdown; `days=<n>` limits how far ahead, `format=json` as above.
+Both options start with **Step 1: get your Moodle key**.
 
-Like the MCP endpoint, the secret path is the only protection: keep the URL private.
+## Step 1: get your Moodle key
 
-## Tests
+The Moodle key (called a *token*) lets the program read Moodle as you. Do this on a computer,
+in Chrome or Edge. You only need to do it once per academic year.
 
-```
-uv run pytest
-```
+1. Log in to Moodle at `https://moodle.runi.ac.il/2027`.
+   The number at the end is the academic year. Use the number you see in your own Moodle address.
+2. Open the developer panel: press **F12** (or **Ctrl+Shift+I**; on a Mac **Cmd+Option+I**).
+   A panel opens at the side or bottom of the window.
+3. At the top of that panel, click the **Network** tab. If you don't see it, click **»** and
+   choose **Network**.
+4. Just below the tabs, tick the **Preserve log** checkbox.
+5. Click the browser's address bar (still the same tab), paste this link, change `2027` to your
+   year, and press Enter:
+   ```
+   https://moodle.runi.ac.il/2027/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=12345&urlscheme=moodlemobile
+   ```
+   The page may stay blank or show an error. That's normal. If the browser asks whether to open
+   an app, click **Cancel**.
+6. In the panel's **Filter** box (top left of the Network tab), type `launch`.
+7. Click the line that starts with `launch.php?service=moodle_mobile_app`. Its status is `303`.
+8. On the right, the **Headers** tab opens. Scroll down to **Response Headers** and find
+   **location**. Its value looks like this (yours is longer):
+   ```
+   moodlemobile://token=YWJjMTIzOjo6ZXhhbXBsZTo6Onh5ejc4OQ==
+   ```
+9. Select the whole value, from `moodlemobile` to the end, and press **Ctrl+C** (Mac: **Cmd+C**).
+10. In the panel, click the **Console** tab.
+11. Paste this line, then replace `PASTE_HERE` with what you copied (keep the quotes):
+    ```
+    atob("PASTE_HERE".split("token=").pop()).split(":::")[1]
+    ```
+    Press Enter. If the browser first asks you to type `allow pasting`, type it, press Enter,
+    and paste the line again.
+12. The console prints your Moodle key in quotes, e.g. `"0123456789abcdef0123456789abcdef"`
+    (32 letters and numbers). Copy it without the quotes.
+13. Save the key in a private note. Treat it like a password.
 
-Runs against a fake Moodle and a fake My RUNI / Yedion (no network, no real tokens or password).
+Stuck in this step? Message me ([shanikn](https://github.com/shanikn)) and we'll find another way.
 
-## Connect to Claude Code
+### Your settings
 
-```
-claude mcp add moodle -- uv run --directory <path-to-this-repo> moodle-mcp
-```
+Both options use the same settings:
 
-## Project layout
+| Setting | What to write |
+|---|---|
+| `MOODLE_BASE_URL` | `https://moodle.runi.ac.il` (leave as is) |
+| `MOODLE_TOKEN_2027` | your Moodle key. Change `2027` in the name to your year |
+| `MOODLE_DEFAULT_YEAR` | your year, e.g. `2027` |
+| `RUNI_USERNAME` | your university username (optional, for exams, timetable and exam bank) |
+| `RUNI_PASSWORD` | your university password (optional, same) |
 
-```
-src/moodle_mcp/
-  config.py       # reads .env, resolves site URL + token per year
-  client.py       # calls the Moodle REST API
-  assignments.py  # assignment listing + new-assignment detection
-  runi.py         # My RUNI single sign-on into Yedion, page fetches
-  exams.py        # Yedion exam schedule
-  yedion_forms.py # shared Yedion helpers: query forms, result grids
-  schedule.py     # Yedion class timetable
-  exam_bank.py    # Yedion exam bank search
-  notebooks.py    # Yedion exam notebooks (grades, appeal status, available files)
-  yedion_files.py # renders Yedion PDFs to page images in memory (pypdfium2)
-  redact.py       # masks ids and tokens in errors and debug output
-  server.py       # FastMCP tool definitions
-docs/
-  moodle_functions.md  # API functions available to the token
-```
+Without `RUNI_USERNAME` and `RUNI_PASSWORD`, everything that comes from Moodle still works.
+Only the exam schedule, class timetable, exam bank and graded exam notebooks (from Yedion) need them.
+
+## Option A: run it on your own computer
+
+### Install
+
+1. Download and install the [Claude desktop app](https://claude.ai/download), then log in.
+2. Open a terminal (a window where you type commands):
+   - **Windows:** press Start, type `PowerShell`, and open **Windows PowerShell**.
+   - **Mac:** press Cmd+Space, type `Terminal`, and press Enter.
+3. Install **uv**, the tool that runs this program (it also installs Python for you). Paste the
+   line for your system into the terminal and press Enter:
+   - **Windows:**
+     ```
+     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+     ```
+   - **Mac:**
+     ```
+     curl -LsSf https://astral.sh/uv/install.sh | sh
+     ```
+4. Close the terminal window. Open a new one so it finds uv.
+
+### Download the program
+
+5. On this page on GitHub, click the green **Code** button, then **Download ZIP**.
+6. Unzip it into your **Documents** folder.
+7. Rename the unzipped folder from `Moodle_MCP-main` to `Moodle_MCP`.
+
+### Add your settings
+
+8. In the `Moodle_MCP` folder, open `.env.example` with a text editor (Notepad on Windows,
+   TextEdit on Mac).
+   On a Mac, if you don't see the file, press Cmd+Shift+. (period) in Finder to show hidden files.
+9. Fill in [your settings](#your-settings) after each `=`, with no spaces or quotes.
+10. Save it under the new name `.env` in the same folder.
+    - **Windows (Notepad):** File → Save As, set *Save as type* to **All files**, and name it
+      `.env`. Otherwise it becomes `.env.txt` and won't work.
+    - **Mac (TextEdit):** first choose Format → **Make Plain Text**, then save as `.env`. If asked,
+      choose **Use ".env"**.
+
+### Check that it starts
+
+11. In the terminal, go to the folder:
+    - **Windows:** `cd $HOME\Documents\Moodle_MCP`
+    - **Mac:** `cd ~/Documents/Moodle_MCP`
+12. Run `uv run moodle-mcp`. The first time, it downloads what it needs (a minute or two).
+13. If it then waits without showing an error, it works. Press **Ctrl+C** to stop it.
+    If you see an error, check your `.env` file, especially the key and the year.
+
+### Connect it to Claude
+
+14. In the Claude desktop app, open **Settings → Developer → Edit Config**. This opens a file
+    called `claude_desktop_config.json`.
+15. Replace its content with the text below. Change `<you>` to your user name on the computer
+    (the name in the path of your Documents folder):
+    - **Windows:**
+      ```json
+      {
+        "mcpServers": {
+          "moodle": {
+            "command": "uv",
+            "args": ["run", "--directory", "C:/Users/<you>/Documents/Moodle_MCP", "moodle-mcp"]
+          }
+        }
+      }
+      ```
+    - **Mac:**
+      ```json
+      {
+        "mcpServers": {
+          "moodle": {
+            "command": "uv",
+            "args": ["run", "--directory", "/Users/<you>/Documents/Moodle_MCP", "moodle-mcp"]
+          }
+        }
+      }
+      ```
+    If the file already had other entries under `mcpServers`, add the `"moodle"` block next to
+    them instead of replacing everything.
+16. Save the file.
+17. Quit Claude completely and open it again. On Windows, right-click the Claude icon near the
+    clock and choose **Quit**. On a Mac, press Cmd+Q.
+18. In a new chat, ask *"What's due this week on Moodle?"*
+
+If Claude says it can't start the `moodle` server, the app can't find uv. In the terminal, run
+`where.exe uv` (Windows) or `which uv` (Mac), and put the path it prints in place of `"uv"` after
+`"command"` (on Windows, write it with `/` instead of `\`).
+
+Using Claude Code instead? Run
+`claude mcp add moodle -- uv run --directory <path-to-Moodle_MCP> moodle-mcp`.
+
+## Option B: run it in the cloud
+
+The program runs on Google Cloud Run, in Google's Tel Aviv data center, and you add it to
+claude.ai as a *connector*. It only runs while Claude is using it, so normal use stays inside
+Google's free allowance.
+
+### Make your own copy of the code
+
+1. Sign in to [GitHub](https://github.com) (create a free account if you don't have one).
+2. Open [this project's page](https://github.com/shanikn/Moodle_MCP) and click **Fork**, then
+   **Create fork**. This makes your own copy. It contains no passwords: you add those in Google
+   Cloud only.
+
+### Make your secret link code
+
+Your connector link includes a secret code that only you know. It works like a password.
+
+3. In Chrome, press **F12** and open the **Console** tab.
+4. Paste this and press Enter:
+   ```
+   crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "")
+   ```
+5. Copy the result (64 letters and numbers, without the quotes) and save it in your private note.
+   This is your **secret code**.
+
+### Set up Google Cloud
+
+6. Go to the [Google Cloud console](https://console.cloud.google.com) and sign in with your
+   Google account. Accept the terms if asked.
+7. Click the project picker at the top, then **New project**. Name it `moodle-mcp` and click
+   **Create**.
+8. Make sure `moodle-mcp` is selected in the project picker at the top.
+9. Open the menu (☰), then **Billing**, and link a billing account. To create one, add your
+   credit card. Google requires this even when you stay free.
+10. In **Billing**, open **Budgets & alerts**, then click **Create budget**.
+11. Name it `moodle`, choose your `moodle-mcp` project, and click **Next**.
+12. Set the amount to **$1** and click **Next**.
+13. Keep the email alerts at 50%, 90% and 100%, and click **Finish**.
+
+### Create the service
+
+14. Open [Cloud Run](https://console.cloud.google.com/run) and click **Create service** (it may
+    say **Deploy container**, then **Service**). If asked to enable an API, click **Enable**.
+15. Choose **Continuously deploy from a repository**, then click **Set up with Cloud Build**.
+16. Choose **GitHub**, sign in, and allow Google Cloud Build to access your fork (you can choose
+    only that repository).
+17. Select your fork `Moodle_MCP` and click **Next**.
+18. Set the branch to `^main$`, the build type to **Dockerfile**, and the source location to
+    `/Dockerfile`. Click **Save**.
+19. Set **Region** to `me-west1 (Tel Aviv)`. It must be in Israel, because Moodle and Yedion
+    block connections from abroad.
+20. Under **Authentication**, choose **Allow public access**. claude.ai has to be able to reach
+    it. Your secret code is what keeps others out.
+21. Under scaling, set **Minimum number of instances** to `0` (so it costs nothing when unused)
+    and **Maximum number of instances** to `1`.
+22. Open **Containers, Volumes, Networking, Security**, then the **Variables & Secrets** tab.
+23. Click **Add variable** for each of [your settings](#your-settings) (name on the left, value on
+    the right), and add these two more:
+
+    | Name | Value |
+    |---|---|
+    | `MCP_TRANSPORT` | `http` |
+    | `MCP_SECRET_PATH` | your secret code |
+
+    Don't add `PORT`. Google sets it.
+24. Click **Create**. Wait until the service shows a green check mark (about 5 minutes the first
+    time).
+
+### Check it
+
+25. Copy the service **URL** at the top of the page. It looks like
+    `https://moodle-mcp-123456789.me-west1.run.app`.
+26. In your browser, open your URL followed by `/` + your secret code + `/due`, for example
+    `https://moodle-mcp-123456789.me-west1.run.app/<secret code>/due`.
+    You should see what's due soon. If you see *Not Found*, check the secret code in the link.
+
+### Add it to Claude
+
+27. On [claude.ai](https://claude.ai), open **Settings → Connectors**.
+28. Click **Add custom connector**.
+29. Name it `Moodle`. As the URL, enter your service URL followed by `/` + your secret code +
+    `/mcp`, for example `https://moodle-mcp-123456789.me-west1.run.app/<secret code>/mcp`.
+30. Click **Add**, then **Connect**. The sign-in page approves itself.
+31. In a new chat, ask *"What's due this week on Moodle?"* The connector also appears in the
+    Claude phone app when you log in with the same account.
+
+### Getting updates
+
+When this project gets new features, open your fork on GitHub and click **Sync fork**, then
+**Update branch**. Google Cloud rebuilds your service by itself within a few minutes.
+
+To change a setting later (for example a new year's key), open your service in Cloud Run, click
+**Edit & deploy new revision**, change the variable under **Variables & Secrets**, and click
+**Deploy**.
+
+## A new academic year
+
+Each academic year is a separate Moodle site with its own key. When the new year starts:
+
+1. Do [Step 1](#step-1-get-your-moodle-key) again with the new year's number.
+2. Add a new setting `MOODLE_TOKEN_<new year>` with the new key. You can keep the old one to
+   still read last year's courses.
+3. Change `MOODLE_DEFAULT_YEAR` to the new year.
+4. Restart Claude (option A) or deploy a new revision (option B).
+
+## Advanced / good to know
+
+### The budget alert doesn't stop spending
+
+The $1 budget only sends you emails. It doesn't switch anything off. If you ever get one, open
+the project in Google Cloud and check what is running.
+
+### Store your key and password in Secret Manager
+
+In option B, instead of typing `MOODLE_TOKEN_<year>` and `RUNI_PASSWORD` as plain variables, you
+can save them in Google Cloud **Secret Manager** and, under **Variables & Secrets**, choose
+**Reference a secret**. Then they aren't shown in the service settings.
+
+### "New assignments" in the cloud
+
+Claude's *new assignments* answer works by remembering which assignments it has already seen.
+On your computer that list stays saved. In the cloud it is forgotten whenever Google restarts
+the service, so after a restart the first answer only starts a new list.
+
+### If something leaks
+
+If someone else might have your `.env` file, Moodle key, password or connector link:
+
+1. In Moodle, open your profile menu → **Preferences** → **Security keys** and reset the
+   *Moodle mobile web service* key. Then get a new key with [Step 1](#step-1-get-your-moodle-key).
+2. Change your university password.
+3. Option B: make a new secret code, update `MCP_SECRET_PATH` in Cloud Run, and update the
+   connector link in claude.ai.
+
+## Technical details
+
+Full list of tools, how the Yedion login works, the iPhone Shortcut endpoint, tests and project
+layout: [docs/technical.md](docs/technical.md). Every Moodle function a student key can use:
+[docs/moodle_functions.md](docs/moodle_functions.md).
+
+Licensed under the [MIT License](LICENSE).
+
+## Stuck?
+
+[Open a GitHub issue](https://github.com/shanikn/Moodle_MCP/issues) or message me
+([shanikn](https://github.com/shanikn)). Never include your key, password or connector link.

@@ -1,0 +1,159 @@
+# Technical details
+
+For developers. Setup instructions for students are in the [README](../README.md).
+
+This is an MCP server that gives Claude read access to a student's Moodle account (Reichman University, `moodle.runi.ac.il`), using the same web-service API as the Moodle mobile app (no admin rights needed), plus the university's student info station Yedion via My RUNI single sign-on.
+
+All planned read-only tools (phases 1–4) work and are covered by tests.
+
+## Tools
+
+**Phase 1 – Assignments**
+
+| Tool | Description | Moodle API |
+|---|---|---|
+| ✅ `list_assignments` | Assignments across your courses, with due dates. `status`: `all` (default) / `pending` (not submitted, incl. drafts) / `submitted`; `include_overdue` (default off) | `mod_assign_get_assignments` + `mod_assign_get_submission_status` per assignment |
+| ✅ `new_assignments` | Assignments added (not in last snapshot) or updated today (`timemodified`) | `mod_assign_get_assignments` + local snapshot |
+| ✅ `get_assignment` | One assignment's details, submission status and feedback | `mod_assign_get_submission_status` |
+
+**Phase 2 – Courses**
+
+| Tool | Description | Moodle API |
+|---|---|---|
+| ✅ `list_courses` | Your courses, with semester and course number | `core_enrol_get_users_courses`, `core_course_get_courses_by_field` |
+| ✅ `get_course_staff` | Lecturer (`editingteacher`) and TAs (`tutor`, `instruction_assistant`) | `core_enrol_get_enrolled_users` |
+| ✅ `get_course_contents` | Sections and activities in a course | `core_course_get_contents` |
+| ✅ `get_grades` | With a course: each grade item, grade and weight. Without: overall grade per course | `gradereport_user_get_grade_items` (needs `userid`), `gradereport_overview_get_course_grades` |
+
+**Phase 3 – Communication**
+
+| Tool | Description | Moodle API |
+|---|---|---|
+| ✅ `staff_messages` | Announcements and Q&A answers by lecturers/TAs, and direct messages, from the last N days | `mod_forum_*`, `core_enrol_get_enrolled_users`, `core_message_get_conversation_messages` |
+
+**Phase 4 – Reading & schedule**
+
+| Tool | Description | Moodle API |
+|---|---|---|
+| ✅ `upcoming_deadlines` | Assignments and quizzes due soon that still need action | `core_calendar_get_action_events_by_timesort` |
+| ✅ `read_content` | Text of course files (PDF, PowerPoint, Word, Jupyter, code, HTML) or Page activities, in 30k-character parts | `mod_page_get_pages_by_courses` + file download |
+| ✅ `search_moodle` | Moodle global search across your courses | `core_search_get_results` |
+
+**Yedion – the university's student info station** (`yedion.runi.ac.il`, not Moodle)
+
+| Tool | Description | Yedion page |
+|---|---|---|
+| ✅ `exam_schedule` | Exams for a year (default: the current academic year by date, Oct–Sep) / semester: course, moed, type, date, start time, room, registration status, appeal deadline; courses with an alternative assessment (הערכה חלופית) are marked | לוח בחינות (`HADPASAT_TOCHNIT_BEHINOT`) |
+| ✅ `class_schedule` | Your timetable for a year / semester (default: current academic year, whole year): each lecture / tutorial with day, start and end time, room, lecturer, group, credits, weekly hours and Yedion's notes; total credits | רשימת מערכת שעות (`StudentQueryExecution`, QueryCode 3) |
+| ✅ `search_exam_bank` | Past exams of a course (by number or name), optionally by lecturer, year, semester and language: year, semester, moed, lecturer, school. Lists exams, doesn't download them | בנק בחינות (`ExamBank`) |
+| ✅ `exam_notebooks` | Your graded exams for a year / semester: grade, appeal deadline and status, and which files exist (exam paper / solution, multiple-choice key, your scanned notebook). Doesn't open files or file appeals | מחברות בחינה (`StudentQueryExecution`, QueryCode 482) |
+| ✅ `read_exam_notebook_file` | Open a graded exam's file (exam paper / solution, answer key, your scanned notebook): pages as images, max 10 per call, plus any text layer. Confidential exams are reported, never opened | `NoteBooks_Open_Do` |
+| ✅ `read_exam_bank_file` | Open a past exam from the exam bank: pages as images, max 10 per call | `ExamBank` (download) |
+
+Planned: exam notebooks (בנק בחינות), student requests (פניה למנהל סטודנטים, מעקב פניות).
+
+**Later / optional:** write actions (e.g. submitting an assignment).
+
+**Not available in Moodle:** syllabus, credit points and class schedule (the last two come from Yedion via `class_schedule`). These live in the
+university's own systems and would need a separate data source.
+
+Every tool takes an optional `year` (defaults to `MOODLE_DEFAULT_YEAR`).
+All API functions available to a student token: [docs/moodle_functions.md](moodle_functions.md).
+
+## Setup
+
+Requires [uv](https://docs.astral.sh/uv/) and Python 3.13+.
+
+```
+uv sync
+```
+
+Copy [`.env.example`](../.env.example) to `.env` in the project root (it is git-ignored) and fill it in:
+
+```
+MOODLE_BASE_URL=https://moodle.runi.ac.il
+MOODLE_TOKEN_2026=<token>
+MOODLE_TOKEN_2027=<token>
+MOODLE_DEFAULT_YEAR=2027
+```
+
+For the Yedion tools, also add your university username and password (the ones you use for
+Moodle and My RUNI):
+
+```
+RUNI_USERNAME=<username>
+RUNI_PASSWORD=<password>
+```
+
+The server logs in to My RUNI (`my.runi.ac.il`), follows its single sign-on (SAML) into Yedion
+and keeps that session; when it expires it logs in again once. If the university refuses the
+password, or asks for anything else (e.g. a second factor), the server stops trying until it is
+restarted, so a wrong password can't lock the account. Yedion, like Moodle, only answers
+Israeli IP addresses.
+
+Each academic year is a separate Moodle site (`<base>/<year>`) with its own token.
+Add a `MOODLE_TOKEN_<year>` line per year; no code changes needed.
+
+### Getting a token (SSO login)
+
+1. Log in to `https://moodle.runi.ac.il/<year>` in your browser.
+2. Open DevTools (F12) → Network → enable *Preserve log*.
+3. Visit:
+   `https://moodle.runi.ac.il/<year>/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=12345&urlscheme=moodlemobile`
+4. The page redirects to `moodlemobile://token=<base64>`. Base64-decode it; the result is
+   `<signature>:::<token>`. Use the part after `:::`.
+
+Treat the token like a password. To revoke it, log out of the Moodle app or remove it under
+*Preferences → Security keys*.
+
+## "What's due?" endpoint (iPhone Shortcut)
+
+When hosted (`MCP_TRANSPORT=http`), `GET /<MCP_SECRET_PATH>/due` returns a short plain-text
+summary: today's classes (Yedion) and what is due soon (Moodle). It is meant for a Shortcut:
+*Get Contents of URL* → *Show Result* / *Speak Text*. Logic is in `brief.py`.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `days` | `7` | how far ahead to look (1–60) |
+| `classes` | `1` | `0` skips the timetable (faster: no Yedion login) |
+| `overdue` | `0` | `1` also lists items past due in the last 30 days |
+| `format` | `text` | `json` returns `{"text", "deadlines", "classes"}` |
+
+`GET /<MCP_SECRET_PATH>/exams` lists the exams still ahead (Yedion's exam schedule, current and
+previous academic year) with a countdown; `days=<n>` limits how far ahead, `format=json` as above.
+
+Like the MCP endpoint, the secret path is the only protection: keep the URL private.
+
+## Tests
+
+```
+uv run pytest
+```
+
+Runs against a fake Moodle and a fake My RUNI / Yedion (no network, no real tokens or password).
+
+## Connect to Claude Code
+
+```
+claude mcp add moodle -- uv run --directory <path-to-this-repo> moodle-mcp
+```
+
+## Project layout
+
+```
+src/moodle_mcp/
+  config.py       # reads .env, resolves site URL + token per year
+  client.py       # calls the Moodle REST API
+  assignments.py  # assignment listing + new-assignment detection
+  runi.py         # My RUNI single sign-on into Yedion, page fetches
+  exams.py        # Yedion exam schedule
+  yedion_forms.py # shared Yedion helpers: query forms, result grids
+  schedule.py     # Yedion class timetable
+  exam_bank.py    # Yedion exam bank search
+  notebooks.py    # Yedion exam notebooks (grades, appeal status, available files)
+  yedion_files.py # renders Yedion PDFs to page images in memory (pypdfium2)
+  redact.py       # masks ids and tokens in errors and debug output
+  server.py       # FastMCP tool definitions
+docs/
+  moodle_functions.md  # API functions available to the token
+```
