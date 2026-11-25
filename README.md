@@ -32,6 +32,12 @@ Then pick one option:
 | Credit card | not needed | needed: Google requires one for billing, but normal use stays free |
 | Time | about 15 minutes | about 30 minutes |
 
+**Does it cost money?** Option A is completely free. Option B is free for normal personal use:
+it stays well within Google Cloud's monthly free tier (2 million requests plus free CPU and memory time), but Google still requires a credit card for billing.
+The only possible small cost: each deploy stores a copy of the program (a *container image*) in Artifact Registry, and old copies can go past the free storage.
+To prevent that, after your first deploy open [Artifact Registry](https://console.cloud.google.com/artifacts) → the `cloud-run-source-deploy` repository (region `me-west1`) → **Edit** → **Cleanup policies**: add a **Delete artifacts** policy (tag state *Any*), then a **Keep most recent versions** policy with count `3`, and click **Update**.
+Also set the $1 budget alert (Option B, steps 10–13).
+
 Both options start with **Step 1: get your Moodle key**.
 
 ## Step 1: get your Moodle key
